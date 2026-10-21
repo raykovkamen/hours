@@ -31,6 +31,30 @@ One command. Zero memory required. Six hours, *minimum*. It's all good, man. ⚖
 
 ---
 
+## 🤝 How to become a client
+
+Three steps. No retainer. No questions asked. *Especially* no questions asked.
+
+**macOS / Linux**
+```bash
+git clone https://github.com/raykovkamen/its-all-billable-man.git ~/.claude/skills/hours
+cp ~/.claude/skills/hours/sites.example.txt ~/.claude/skills/hours/sites.txt
+```
+
+**Windows (PowerShell)**
+```powershell
+git clone https://github.com/raykovkamen/its-all-billable-man.git "$env:USERPROFILE\.claude\skills\hours"
+Copy-Item "$env:USERPROFILE\.claude\skills\hours\sites.example.txt" "$env:USERPROFILE\.claude\skills\hours\sites.txt"
+```
+
+Then open `sites.txt` and list your clients (`pattern = Site`, e.g. `acme-store = Acme Store`).
+It's git-ignored, so your client list never leaves the building.
+
+Requires Python 3.9+ and Claude Code. Restart Claude Code and `/hours` is ready to take your case.
+To get the latest legal strategy: `git pull` in that folder.
+
+---
+
 ## 📞 How to retain our services
 
 In Claude Code:
@@ -43,7 +67,8 @@ In Claude Code:
 Or, if you prefer to do things yourself (respect):
 
 ```
-py -3 -I extract_sessions.py [YYYY-MM-DD] [--all]
+python3 -I extract_sessions.py [YYYY-MM-DD] [--all]     # macOS / Linux
+py -3 -I extract_sessions.py [YYYY-MM-DD] [--all]       # Windows
 ```
 
 You'll receive a clean, professional, court-ready table:
@@ -76,7 +101,8 @@ You'll receive a clean, professional, court-ready table:
 |---|---|
 | `extract_sessions.py` | The muscle. Reads `~/.claude/projects/*/*.jsonl` and builds the table. |
 | `sites.txt` | The client list. Copy `sites.example.txt` to start. Git-ignored, because *attorney–client privilege.* |
-| `skill/SKILL.md` | The `/hours` skill. `~/.claude/skills/hours` is a junction to it. |
+| `SKILL.md` | The `/hours` skill. The whole repo *is* the skill, so it lives in `~/.claude/skills/hours`. |
+| `sites.example.txt` | A sample client list. Totally fictional. Any resemblance to real chicken restaurants is coincidental. |
 
 ---
 
