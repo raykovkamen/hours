@@ -3,5 +3,5 @@
 # Copy this file to sites.txt (which stays out of git) and put your real clients there.
 acme-store = Acme Store
 acme.com = Acme Store
-los-pollos = Los Pollos Hermanos
+craftberry = Craftberry
 wexler-mcgill = Wexler McGill

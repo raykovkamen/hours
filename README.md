@@ -75,7 +75,7 @@ You'll receive a clean, professional, court-ready table:
 
 | Time | Hours | Site |
 |---|---|---|
-| 09:00–12:00 | 3.0 | Los Pollos Hermanos |
+| 09:00–12:00 | 3.0 | Craftberry |
 | 12:30–13:30 | 1.0 | Break |
 | ... | ... | ... |
 | **Total** | **6h** (+1h break) | |
@@ -102,7 +102,7 @@ You'll receive a clean, professional, court-ready table:
 | `extract_sessions.py` | The muscle. Reads `~/.claude/projects/*/*.jsonl` and builds the table. |
 | `sites.txt` | The client list. Copy `sites.example.txt` to start. Git-ignored, because *attorney–client privilege.* |
 | `SKILL.md` | The `/hours` skill. The whole repo *is* the skill, so it lives in `~/.claude/skills/hours`. |
-| `sites.example.txt` | A sample client list. Totally fictional. Any resemblance to real chicken restaurants is coincidental. |
+| `sites.example.txt` | A sample client list. Mostly fictional. |
 
 ---
 
