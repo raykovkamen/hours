@@ -1,4 +1,4 @@
-# 🕴️ claude-timesheet
+# 🕴️ its-all-billable-man
 
 ### *Did you forget to track your hours? Did you "work" two hours and need to bill six?*
 ### **Better call `/hours`!**
