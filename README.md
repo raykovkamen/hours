@@ -47,7 +47,7 @@ git clone https://github.com/raykovkamen/its-all-billable-man.git "$env:USERPROF
 Copy-Item "$env:USERPROFILE\.claude\skills\hours\sites.example.txt" "$env:USERPROFILE\.claude\skills\hours\sites.txt"
 ```
 
-Then open `sites.txt` and list your clients (`pattern = Site`, e.g. `acme-store = Acme Store`).
+Then open `sites.txt` and list your clients (`pattern = Site`, e.g. `craftberry = Craftberry`).
 It's git-ignored, so your client list never leaves the building.
 
 Requires Python 3.9+ and Claude Code. Restart Claude Code and `/hours` is ready to take your case.
