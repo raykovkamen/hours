@@ -1,0 +1,7 @@
+# pattern = Site — matched (case-insensitive substring) against a session's project folder AND its prompts.
+# First matching line wins, so put specific patterns (e.g. a client worked on from another folder) above folder names.
+# Copy this file to sites.txt (which stays out of git) and put your real clients there.
+acme-store = Acme Store
+acme.com = Acme Store
+los-pollos = Los Pollos Hermanos
+wexler-mcgill = Wexler McGill
