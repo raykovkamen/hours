@@ -73,6 +73,7 @@ class Plan:
     actions: list[Action] = field(default_factory=list)
     blocked: list[str] = field(default_factory=list)  # rows that cannot be pushed, with the reason
     logged: list[Entry] = field(default_factory=list)
+    tag: str = ""  # create mode: tag on created tasks (for the report)
 
     @property
     def ok(self) -> bool:
@@ -222,7 +223,7 @@ def _find_daily_task(p: Plan, a: Action, api: ClickUp, log_dir: Path) -> Task | 
 
 
 def _resolve_daily_task(p: Plan, a: Action, api: ClickUp, status: str, me: int | None, dry_run: bool,
-                        log_dir: Path, prompt_field: str = "") -> None:
+                        log_dir: Path, prompt_field: str = "", tag: str = "") -> None:
     """Reuse the task an earlier push created today (if it still exists in ClickUp), else create one."""
     found = _find_daily_task(p, a, api, log_dir)
     if found:
@@ -233,20 +234,21 @@ def _resolve_daily_task(p: Plan, a: Action, api: ClickUp, status: str, me: int |
     fields = [{"id": fid, "value": a.prompt}] if fid else None
     a.created, a.prompt_set = True, bool(fid)
     if not dry_run:
-        a.task = api.create_task(a.list_id, a.task_name, status, me, fields)
+        a.task = api.create_task(a.list_id, a.task_name, status, me, fields, tag)
         a.task_id = a.task.id
 
 
 def execute(p: Plan, api: ClickUp, billable: bool, dry_run: bool, log_dir: Path, status: str = "in progress",
-            prompt_field: str = "") -> None:
+            prompt_field: str = "", tag: str = "") -> None:
     """Validate (or find/create) every task, then post and shrink. Appends a JSON-lines log, dry runs included."""
     if p.blocked:
         return
+    p.tag = tag
     if p.mode == "create":
         me = api.user().get("id")
         for a in p.actions:
             try:
-                _resolve_daily_task(p, a, api, status, me, dry_run, log_dir, prompt_field)
+                _resolve_daily_task(p, a, api, status, me, dry_run, log_dir, prompt_field, tag)
             except ClickUpError as e:
                 p.blocked.append(f"{a.site}: list {a.list_id} - {e}")
     else:
@@ -296,7 +298,8 @@ def render(p: Plan, dry_run: bool) -> str:
     posted = p.to_post
     created = [a for a in p.actions if a.created]
     if created:
-        out.append(f"{'Would create' if dry_run else 'Created'} {len(created)} task(s), status \"in progress\", assigned to you:")
+        tagged = f", tagged \"{p.tag}\"" if p.tag else ""
+        out.append(f"{'Would create' if dry_run else 'Created'} {len(created)} task(s), status \"in progress\", assigned to you{tagged}:")
         for a in created:
             out.append(f"  - {_name(a)}")
             if a.prompt_set:

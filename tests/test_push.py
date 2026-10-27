@@ -137,7 +137,8 @@ class CreateApi(FakeApi):
     def field_id(self, list_id, name):
         return "F1" if name.lower() == "initial prompt" else ""
 
-    def create_task(self, list_id, name, status, assignee_id, custom_fields=None):
+    def create_task(self, list_id, name, status, assignee_id, custom_fields=None, tag=""):
+        self.tags = getattr(self, "tags", []) + [tag]
         self.fields = getattr(self, "fields", []) + [custom_fields]
         if list_id in self.bad_lists:
             from timesheet.clickup import ClickUpError
@@ -276,6 +277,22 @@ class CreateModeTest(unittest.TestCase):
         self.assertFalse(p.ok)
         self.assertEqual((api.created, api.posted), ([], []))
 
+
+
+class TagTest(unittest.TestCase):
+    def test_created_tasks_carry_the_tag_and_existing_ones_are_untouched(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "sites.txt"
+            p.write_text("acme = Acme | list:L1\nzeta = Zeta | list:L2\n", encoding="utf-8")
+            sites, logs = Sites(p), Path(d) / "logs"
+            logs.mkdir()
+            (logs / "push-2026-10-27.jsonl").write_text(
+                json.dumps({"mode": "create", "dry_run": False, "site": "Zeta", "task": "Z1"}) + "\n", encoding="utf-8")
+            api = CreateApi()
+            plan = push.plan(DAY, [row(9, 0, 10, 0, "Acme"), row(10, 0, 11, 0, "Zeta")], sites, [], {}, "create", "", "{title}")
+            push.execute(plan, api, billable=False, dry_run=False, log_dir=logs, tag="created by hours")
+            self.assertEqual(api.tags, ["created by hours"])  # only the new Acme task; Zeta's existed
+            self.assertIn('tagged "created by hours"', push.render(plan, dry_run=False))
 
 
 class ReconcileTest(unittest.TestCase):

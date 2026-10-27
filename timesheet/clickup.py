@@ -123,8 +123,12 @@ class ClickUp:
             cache[list_id] = {f["name"].strip().lower(): f["id"] for f in self._call("GET", f"list/{list_id}/field").get("fields", [])}
         return cache[list_id].get(name.strip().lower(), "")
 
+    def add_tag(self, task_id: str, tag: str) -> None:
+        """Attach a tag (ClickUp creates it in the space if it does not exist yet)."""
+        self._call("POST", f"task/{task_id}/tag/{urllib.parse.quote(tag)}")
+
     def create_task(self, list_id: str, name: str, status: str, assignee_id: int | None,
-                    custom_fields: list[dict] | None = None) -> Task:
+                    custom_fields: list[dict] | None = None, tag: str = "") -> Task:
         """Create a task; when the list has no such status, it is created with the list's default status."""
         body: dict = {"name": name}
         if custom_fields:
@@ -137,6 +141,8 @@ class ClickUp:
             if not status or "status" not in str(e).lower():
                 raise
             t = self._call("POST", f"list/{list_id}/task", body=body)
+        if tag:
+            self.add_tag(t["id"], tag)
         return self.task(t["id"])
 
     # -- time entries --------------------------------------------------------------

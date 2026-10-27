@@ -189,7 +189,8 @@ day's time goes there:
   reads the day's commits, your prompts and its own replies — the replies say what actually got done —
   and writes it; you approve it in the dry run. By hand: `--title
   "Acme=…"`, or we take your first commit subject, or the date if you didn't commit.
-- **Status** *in progress*, **assigned** to you, **no description**. No stamps, no keys.
+- **Status** *in progress*, **assigned** to you, **no description**, and the tag **`created by hours`** — so
+  anyone can see (and filter) which tasks the skill opened. `task_tag = ""` if you'd rather it didn't sign its work.
 - **Initial prompt** (the custom field, if the list has it): the request that started the work — the first
   prompt of the Claude session behind it, exactly as you typed or pasted it. `--prompt "Acme=…"` to
   file a different one, `prompt_field = ""` to file none.
@@ -258,7 +259,7 @@ python -m unittest discover -s tests -t .
 and `sources/` with one file per witness: `activitywatch.py`, `claude_sessions.py`, `git_commits.py`,
 `calendar_ics.py` (with its own recurrence engine — weekly standups, last-Friday retros, moved meetings),
 `manual.py`. Adding a witness — a calendar, a ticket system — is one module
-and one line. Ninety-eight tests cover the lot, including a fake ClickUp, a fake ActivityWatch, a real temporary
+and one line. Ninety-nine tests cover the lot, including a fake ClickUp, a fake ActivityWatch, a real temporary
 git repo and a calendar full of awkward recurring meetings.
 
 ---

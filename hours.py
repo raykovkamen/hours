@@ -95,7 +95,7 @@ def cmd_push(args, cfg, sites) -> int:
         p = push.plan(args.day, rows, sites, logged, assign, mode, cfg.clickup.list_id, cfg.clickup.task_name,
                       titles, tl.evidence_for, lambda site: prompt_over.get(site) or tl.initial_prompt(site))
         push.execute(p, api, args.billable or cfg.clickup.billable, args.dry_run, cfg.log_dir, cfg.clickup.task_status,
-                     cfg.clickup.prompt_field)
+                     cfg.clickup.prompt_field, cfg.clickup.task_tag)
     except ClickUpError as e:
         print(f"Push failed: {e}")
         return 2
