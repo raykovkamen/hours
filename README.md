@@ -65,9 +65,7 @@ Three steps. No retainer. One question asked, and it's `check`.
 git clone https://github.com/raykovkamen/hours.git ~/.claude/skills/hours
 cd ~/.claude/skills/hours
 cp config.example.toml config.toml && cp sites.example.txt sites.txt
-python3 -I hours.py add "TEXT" 30m [--at HH:MM] [DAY]
-hours.py week [DAY]
-hours.py check
+python3 -I hours.py check
 ```
 
 **Windows (PowerShell)**
@@ -102,10 +100,13 @@ we read it at `localhost:5600` and that's as far as it goes.
 
 - **Browser:** "ActivityWatch Web Watcher" from the Chrome Web Store (or Firefox Add-ons). Without it, a tab
   called "Shopify Plus - Google Chrome" is a mystery. With it, it's `admin.shopify.com/store/josera-hungary`.
-- **VS Code:** `code --install-extension ActivityWatch.aw-watcher-vscode`. Places hours of editing you
-  never committed.
+  When the address and the tab title disagree, the address wins — it's the more reliable witness.
+- **VS Code:** `code --install-extension ActivityWatch.aw-watcher-vscode`, then **reload VS Code**
+  (Ctrl/Cmd+Shift+P → *Developer: Reload Window*) — the extension stays silent until you do. Places hours of
+  editing you never committed.
 
-`check` tells you which ones it found. Incognito tabs are never read.
+`check` tells you which ones it found, and the summary line says how many minutes each one placed — or
+that VS Code still needs that reload. Incognito tabs are never read.
 
 ### 📅 Calling the calendar as a witness
 
@@ -141,6 +142,8 @@ Or, if you prefer to do things yourself (respect):
 hours.py [DAY] [--all] [--json]
 hours.py push [DAY] [--dry-run] [--only Site] [--assign "Site=taskid"]
 hours.py push [DAY] --create [--title "Site=…"] [--prompt "Site=…"]   # create mode, see below
+hours.py add "TEXT" 30m [--at HH:MM] [DAY]
+hours.py week [DAY]
 hours.py check
 ```
 
@@ -156,6 +159,9 @@ court-ready table:
 | **Total** | **6h** (+1h break) | | |
 
 *Look at that. Every minute accounted for, and every one of them real. Beautiful.*
+
+The **ClickUp task** column says where each row will be filed when you log on existing tasks. In create
+mode the push opens the tasks itself, so there's nothing to show yet and the column quietly leaves the room.
 
 Once a week, `/hours week` reads the whole week back to you — tracked and reported hours per day,
 how much is Unknown, which days have unnamed rows, and how much of each day is **actually in ClickUp**
@@ -247,7 +253,7 @@ python -m unittest discover -s tests -t .
 and `sources/` with one file per witness: `activitywatch.py`, `claude_sessions.py`, `git_commits.py`,
 `calendar_ics.py` (with its own recurrence engine — weekly standups, last-Friday retros, moved meetings),
 `manual.py`. Adding a witness — a calendar, a ticket system — is one module
-and one line. Ninety tests cover the lot, including a fake ClickUp, a fake ActivityWatch, a real temporary
+and one line. Ninety-one tests cover the lot, including a fake ClickUp, a fake ActivityWatch, a real temporary
 git repo and a calendar full of awkward recurring meetings.
 
 ---
