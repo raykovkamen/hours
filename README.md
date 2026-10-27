@@ -14,7 +14,7 @@ the Josera thing? Spent the afternoon in Slack "aligning"?
 
 **Don't panic. Don't guess. Don't touch that timer.**
 
-One command. Zero memory required. Three witnesses who were there the whole time. It's all good, man. ⚖️
+One command. Zero memory required. Five witnesses who were there the whole time. It's all good, man. ⚖️
 
 (For the version of this document with the jokes removed, see [`docs/TEAM-POLICY.md`](docs/TEAM-POLICY.md).
 That's the one the firm actually operates under.)
@@ -27,9 +27,11 @@ We don't ask you what happened. We ask the people who saw it.
 
 | Witness | Testimony | How they know which client |
 |---|---|---|
-| **ActivityWatch** | Which window was in front, every few seconds, with away-from-keyboard time struck from the record. Sees the admin, the theme editor, Slack, email, the call. | The window title. VS Code says the folder, the browser says the store. Matched against `sites.txt`. |
+| **ActivityWatch** | Which window was in front, every few seconds, with away-from-keyboard time struck from the record. Sees the admin, the theme editor, Slack, email. With its browser extension, the **address** of the tab; with its VS Code extension, the **project** you're editing. | The window title, the URL (`admin.shopify.com/store/acme-shop` names the store even when the tab title doesn't), the VS Code project. Matched against `sites.txt`. |
 | **Claude Code** | Every session you had today, in every project. Gaps over 15 minutes don't count — your AI was working, but you were *supervising* elsewhere. | The project folder. Name another client in a prompt and the session follows it. Paste a ClickUp link and it follows the task. |
 | **git** | Your commits. Each one vouches for up to 30 minutes of honest labour before it, capped at the previous commit. | The repository. A task id in the branch name (`feature/86cabc123-header`) or the commit subject names the task. |
+| **Calendar** | Your meetings, from your calendar's secret iCal address. They count even when the laptop slept through them — that's the whole point. Declined, cancelled, all-day and "free" events don't. | The meeting title. `Josera weekly` goes to Josera; `Dentist` goes to a `?` row and a stern look. |
+| **You** | `hours.py add "Josera call about the ES store" 30m` — for the call on your phone, the meeting in the kitchen. | Your words. Name the client. |
 
 They testify onto a one-minute grid. Then:
 
@@ -63,7 +65,9 @@ Three steps. No retainer. One question asked, and it's `check`.
 git clone https://github.com/raykovkamen/hours.git ~/.claude/skills/hours
 cd ~/.claude/skills/hours
 cp config.example.toml config.toml && cp sites.example.txt sites.txt
-python3 -I hours.py check
+python3 -I hours.py add "TEXT" 30m [--at HH:MM] [DAY]
+hours.py week [DAY]
+hours.py check
 ```
 
 **Windows (PowerShell)**
@@ -94,6 +98,22 @@ brew install --cask activitywatch                          # macOS
 Start it once. It lives in the tray, starts with the system, and **never leaves your machine** —
 we read it at `localhost:5600` and that's as far as it goes.
 
+**Two extensions make the first witness twice as sharp**, both free, both from ActivityWatch:
+
+- **Browser:** "ActivityWatch Web Watcher" from the Chrome Web Store (or Firefox Add-ons). Without it, a tab
+  called "Shopify Plus - Google Chrome" is a mystery. With it, it's `admin.shopify.com/store/josera-hungary`.
+- **VS Code:** `code --install-extension ActivityWatch.aw-watcher-vscode`. Places hours of editing you
+  never committed.
+
+`check` tells you which ones it found. Incognito tabs are never read.
+
+### 📅 Calling the calendar as a witness
+
+Google Calendar → Settings → your calendar → *Integrate calendar* → **Secret address in iCal format**.
+Put it in `config.toml` as `calendar_ics = "https://…"` (or a path to an `.ics` file — Outlook works too).
+It's a secret: it goes in the config, never in a chat. Add your calendar address to `my_emails` if it
+isn't your git email, so the meetings you declined stay off the record.
+
 ### 🔑 The ClickUp token
 
 Settings → Apps → API Token in ClickUp. Put it in `config.toml` under `[clickup] token`, or export
@@ -110,6 +130,8 @@ In Claude Code:
 /hours                 today's table
 /hours 2026-10-20      for when the client asks about last Tuesday
 /hours push            put it on the record in ClickUp (we show you the plan first)
+/hours add "Josera call" 30m    the call no machine saw
+/hours week            the whole week: hours, gaps, what's not in ClickUp yet
 /hours check           is everything in order?
 ```
 
@@ -135,6 +157,10 @@ court-ready table:
 
 *Look at that. Every minute accounted for, and every one of them real. Beautiful.*
 
+Once a week, `/hours week` reads the whole week back to you — tracked and reported hours per day,
+how much is Unknown, which days have unnamed rows, and how much of each day is **actually in ClickUp**
+(read from ClickUp itself, not from our memory). Fix the gaps on Friday, not at the end of the month.
+
 ---
 
 ## 📋 Putting it on the record (`push`)
@@ -154,7 +180,8 @@ We don't touch existing tasks at all. Each client gets **one new task per day** 
 day's time goes there:
 
 - **Name:** what you did, nothing else — `Checkout VAT field and ERP SKU sync`. With `/hours push`, Claude
-  reads the day's commits and prompts and writes it; you approve it in the dry run. By hand: `--title
+  reads the day's commits, your prompts and its own replies — the replies say what actually got done —
+  and writes it; you approve it in the dry run. By hand: `--title
   "Acme=…"`, or we take your first commit subject, or the date if you didn't commit.
 - **Status** *in progress*, **assigned** to you, **no description**. No stamps, no keys.
 - **Initial prompt** (the custom field, if the list has it): the request that started the work — the first
@@ -195,11 +222,13 @@ titles (`acme.com = Acme`) so browser work gets placed. Unknown project folder? 
 ## ⚠️ The fine print (read it, because I won't say it twice)
 
 - This is an **estimate from evidence**, not a stopwatch. It cannot see the call you took on your phone
-  or the whiteboard session in the kitchen. Add those by hand, like an honest person would.
+  or the whiteboard session in the kitchen — unless it's in your calendar or you `add` it. Like an honest
+  person would.
 - `--all` shows where every minute came from. Read it before you push, and *definitely* before you argue.
 - The pushed entries are **your** statement of your time, the same as if you'd typed them in. We're
   counsel, not the defendant.
-- Everything runs locally and reads only your own files. What reaches ClickUp: the time entry (task,
+- Everything runs locally and reads only your own data: session logs, repositories, ActivityWatch (titles,
+  URLs, VS Code projects), your calendar feed, your notes. None of it is uploaded. What reaches ClickUp: the time entry (task,
   start, duration, `hours: <client>`) and, in create mode, the new task's title and its **Initial prompt**
   field — your first prompt for that work, pasted client text included. Anyone who can see the task can
   read it. Set `prompt_field = ""` if that's more than you want on the record.
@@ -215,8 +244,11 @@ python -m unittest discover -s tests -t .
 
 `hours.py` is the front desk. `timesheet/` is the firm: `config.py`, `sites.py`, `timeline.py` (the grid),
 `allocate.py` (slots and the schedule), `report.py`, `clickup.py` (the API), `push.py` (the paperwork),
-and `sources/` with one file per witness. Adding a witness — a calendar, a ticket system — is one module
-and one line. Sixty-seven tests cover the lot, including a fake ClickUp and a real temporary git repo.
+and `sources/` with one file per witness: `activitywatch.py`, `claude_sessions.py`, `git_commits.py`,
+`calendar_ics.py` (with its own recurrence engine — weekly standups, last-Friday retros, moved meetings),
+`manual.py`. Adding a witness — a calendar, a ticket system — is one module
+and one line. Ninety tests cover the lot, including a fake ClickUp, a fake ActivityWatch, a real temporary
+git repo and a calendar full of awkward recurring meetings.
 
 ---
 

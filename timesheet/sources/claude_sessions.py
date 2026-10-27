@@ -23,6 +23,8 @@ SOURCE = "claude"
 TIMESHEET_PHRASES = ("today's hours", "hours for", "/hours")
 # Folders that hold many clients' repos; a session started there is placed by its prompts, not its folder.
 CONTAINER_DEPTH = 3  # drive + one folder (D:\ERP) is a container; D:\PROJECTS\shop is a project
+MIN_REPLY = 80  # shorter assistant texts are acknowledgements, not descriptions of work
+REPLY_CHARS = 600  # kept per reply for the evidence listing (local only, never sent anywhere)
 PASTED_RE = re.compile(r"<pasted_content[^>]*>.*?</pasted_content>", re.S)
 
 
@@ -88,7 +90,7 @@ def clean_prompt(c: str) -> str:
 
 
 def _read(path: str, day, idle: timedelta):
-    stamps, prompts, cwd, first, initial = [], [], None, None, None
+    stamps, prompts, cwd, first, initial, replies = [], [], None, None, None, []
     with open(path, encoding="utf-8", errors="replace") as f:
         for line in f:
             try:
@@ -107,6 +109,11 @@ def _read(path: str, day, idle: timedelta):
                 continue
             stamps.append(local)
             cwd = cwd or d.get("cwd")
+            if d.get("type") == "assistant":  # what was actually done - the best material for a task title
+                content = d.get("message", {}).get("content")
+                for c in content if isinstance(content, list) else []:
+                    if isinstance(c, dict) and c.get("type") == "text" and len(c.get("text", "")) >= MIN_REPLY:
+                        replies.append((local, c["text"]))
             if d.get("type") == "user":
                 c = d.get("message", {}).get("content")
                 if isinstance(c, str) and c.strip():
@@ -118,7 +125,8 @@ def _read(path: str, day, idle: timedelta):
                         prompts.append((local, c.strip()))
     stamps.sort()
     prompts.sort(key=lambda p: p[0])
-    return stamps, prompts, cwd, first, initial
+    replies.sort(key=lambda r: r[0])
+    return stamps, prompts, cwd, first, initial, replies
 
 
 def collect(cfg: Config, sites: Sites, tl: Timeline) -> Report:
@@ -129,7 +137,7 @@ def collect(cfg: Config, sites: Sites, tl: Timeline) -> Report:
         if datetime.fromtimestamp(os.path.getmtime(path)).date() < tl.day:
             continue
         folder = os.path.basename(os.path.dirname(path))
-        stamps, prompts, cwd, first, initial = _read(path, tl.day, idle)
+        stamps, prompts, cwd, first, initial, replies = _read(path, tl.day, idle)
         if not prompts or (first and any(k in first for k in TIMESHEET_PHRASES)):
             continue
         active = sum(((b - a) for a, b in zip(stamps, stamps[1:]) if b - a <= idle), timedelta())
@@ -158,6 +166,9 @@ def collect(cfg: Config, sites: Sites, tl: Timeline) -> Report:
                 tl.mark(a, b, key, SOURCE)
         for (t, text), (_, key) in zip(prompts, switches):
             tl.note(key, t, "prompt", label(text)[:200])
+        for t, text in replies:  # a reply belongs to the client of the prompt it answers
+            key = next((k for pt, k in reversed(switches) if pt <= t), switches[0][1])
+            tl.note(key, t, "reply", text[:REPLY_CHARS])
         if initial:  # the request that started this session's work, for the task's "Initial prompt" field
             tl.note_initial(switches[0][1], stamps[0], initial)
         sessions.append(Session(stamps[0], stamps[-1], folder, cwd or "", active, prompts, switches))

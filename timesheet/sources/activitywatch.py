@@ -1,7 +1,16 @@
 """ActivityWatch: the window in front, minus away-from-keyboard time.
 
-Window titles name the client: VS Code shows the workspace folder, browsers show the store or its admin.
-Titles that match no sites.txt rule are counted and reported so the user can add a pattern.
+Three kinds of buckets are read when present:
+
+* aw-watcher-window  - application and window title of the window in front (the base signal)
+* aw-watcher-web-*   - the browser extension: the URL of the active tab. While a browser window is in front,
+                       its URL is matched too, so `admin.shopify.com/store/acme-shop` places the minute even
+                       when the tab title names no store.
+* aw-watcher-vscode  - the VS Code extension: the project folder of the file being edited, which places
+                       editing without Claude or commits.
+
+Titles, URLs and projects that match no sites.txt rule are counted and reported so a pattern can be added.
+Nothing leaves the machine.
 """
 from __future__ import annotations
 
@@ -19,6 +28,7 @@ from ..timeline import Timeline
 
 SOURCE = "activitywatch"
 MIN_EVENT_SECONDS = 5  # shorter focus changes are noise (alt-tabbing through)
+BROWSERS = ("chrome", "msedge", "edge", "firefox", "brave", "opera", "vivaldi", "arc", "safari")
 
 
 def _get(base: str, path: str, **params) -> object:
@@ -42,6 +52,18 @@ def _minutes(tl: Timeline, start: datetime, seconds: float) -> range:
     return range(max(0, first), min(24 * 60, max(last, first + 1)))
 
 
+def _is_browser(app: str) -> bool:
+    app = app.lower()
+    return any(b in app for b in BROWSERS)
+
+
+def _short_url(url: str) -> str:
+    """Host and first path segments - enough to write a rule, without query strings."""
+    parts = urllib.parse.urlsplit(url)
+    path = "/".join(parts.path.split("/")[:4])
+    return f"{parts.netloc}{path}"
+
+
 def collect(cfg: Config, sites: Sites, tl: Timeline) -> Report:
     base = cfg.sources.activitywatch_url
     try:
@@ -51,38 +73,74 @@ def collect(cfg: Config, sites: Sites, tl: Timeline) -> Report:
                       "the day rests on Claude sessions and git commits", available=False)
     window = next((b for b in buckets if b.startswith("aw-watcher-window")), None)
     afk = next((b for b in buckets if b.startswith("aw-watcher-afk")), None)
+    web = [b for b in buckets if b.startswith("aw-watcher-web")]
+    vscode = [b for b in buckets if b.startswith("aw-watcher-vscode")]
     if not window:
         return Report(SOURCE, "ActivityWatch: running, but no window watcher data yet", available=False)
 
     start = tl.day_start.astimezone(timezone.utc).isoformat()
     end = (tl.day_start + timedelta(days=1)).astimezone(timezone.utc).isoformat()
+
+    def events(bucket: str) -> list[dict]:
+        return [e for e in _get(base, f"buckets/{bucket}/events", start=start, end=end, limit=-1)
+                if e.get("duration", 0) >= MIN_EVENT_SECONDS or bucket.startswith("aw-watcher-afk")]
+
     away: set[int] = set()
     if afk:
-        for e in _get(base, f"buckets/{afk}/events", start=start, end=end, limit=-1):
+        for e in events(afk):
             if e.get("data", {}).get("status") == "afk":
                 away.update(_minutes(tl, _ts(e["timestamp"]), e["duration"]))
 
+    urls: dict[int, str] = {}  # minute -> active tab URL (browser extension)
+    for b in web:
+        for e in events(b):
+            url = e.get("data", {}).get("url", "")
+            if url and not e.get("data", {}).get("incognito"):
+                for m in _minutes(tl, _ts(e["timestamp"]), e["duration"]):
+                    urls[m] = url
+
     unmatched: Counter[str] = Counter()
-    minutes = 0
-    for e in _get(base, f"buckets/{window}/events", start=start, end=end, limit=-1):
-        if e.get("duration", 0) < MIN_EVENT_SECONDS:
-            continue
+    minutes = by_url = 0
+    for e in events(window):
         t = _ts(e["timestamp"])
         data = e.get("data", {})
-        title = data.get("title", "")
-        site = sites.match(f"{data.get('app', '')} {title}")
+        app, title = data.get("app", ""), data.get("title", "")
+        browser = _is_browser(app)
+        title_site = sites.match(f"{app} {title}")
         for m in _minutes(tl, t, e["duration"]):
             if m in away:
                 continue
+            url = urls.get(m, "") if browser else ""
+            site = title_site or (sites.match(url) if url else None)
+            if site and not title_site:
+                by_url += 1
             tl.mark(tl.day_start + timedelta(minutes=m), tl.day_start + timedelta(minutes=m + 1), site, SOURCE)
             minutes += 1
             if not site:
-                unmatched[title[:70]] += 1
+                unmatched[_short_url(url) if url else title[:70]] += 1
 
-    summary = f"ActivityWatch: ~{minutes // 60}h{minutes % 60:02d} at the keyboard"
-    details = [f"  unmatched window {title!r}: {n} min" for title, n in unmatched.most_common(10)]
+    by_project = 0
+    for b in vscode:
+        for e in events(b):
+            project = e.get("data", {}).get("project", "")
+            site = sites.match(project) if project else None
+            for m in _minutes(tl, _ts(e["timestamp"]), e["duration"]):
+                if m in away:
+                    continue
+                stamp = tl.day_start + timedelta(minutes=m)
+                tl.mark(stamp, stamp + timedelta(minutes=1), site, SOURCE)
+                if site:
+                    by_project += 1
+                elif project:
+                    unmatched[f"VS Code project {project[-60:]}"] += 1
+
+    extras = []
+    extras.append(f"browser URLs: {by_url} min placed" if web else "browser URLs: extension not installed")
+    extras.append(f"VS Code: {by_project} min placed" if vscode else "VS Code: extension not installed")
+    summary = f"ActivityWatch: ~{minutes // 60}h{minutes % 60:02d} at the keyboard ({'; '.join(extras)})"
+    details = [f"  unmatched {what!r}: {n} min" for what, n in unmatched.most_common(15)]
     needs = []
     if unmatched:
-        top = ", ".join(f"{title!r} ({n} min)" for title, n in unmatched.most_common(6))
-        needs.append(f"windows no sites.txt pattern matched: {top}")
-    return Report(SOURCE, summary, details, needs)
+        top = ", ".join(f"{what!r} ({n} min)" for what, n in unmatched.most_common(8))
+        needs.append(f"windows / URLs / projects no sites.txt pattern matched: {top}")
+    return Report(SOURCE, summary, details, needs, extensions={"web": bool(web), "vscode": bool(vscode)})

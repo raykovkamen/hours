@@ -39,6 +39,8 @@ class Sources:
     carry_minutes: int = 30  # unplaced active minutes inherit a site this close
     # ClickUp task ids in branch names and commit subjects: "86cabc123", "CU-86cabc123", "#86cabc123"
     git_task_pattern: str = r"(?:\bCU-|#|\b)([0-9]{2,3}[a-z][a-z0-9]{5,9})\b"
+    calendar_ics: str = ""  # iCal feed URL or .ics path with your meetings ("" = off)
+    my_emails: frozenset[str] = frozenset()  # your addresses, to skip calendar events you declined
 
 
 @dataclass(frozen=True)
@@ -95,6 +97,8 @@ def load(path: Path | None = None) -> Config:
         activitywatch_url=s.get("activitywatch_url", "http://localhost:5600").rstrip("/"),
         carry_minutes=int(s.get("carry_minutes", 30)),
         git_task_pattern=s.get("git_task_pattern", Sources.git_task_pattern),
+        calendar_ics=str(s.get("calendar_ics", "")),
+        my_emails=frozenset(e.strip().lower() for e in [*s.get("my_emails", []), s.get("git_author", "")] if e.strip()),
     )
     c = raw.get("clickup", {})
     clickup = ClickUpConfig(token=str(c.get("token", "")), team_id=str(c.get("team_id", "")),

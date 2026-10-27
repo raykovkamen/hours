@@ -216,6 +216,91 @@ class ActivityWatchTest(Fixture):
         self.assertFalse(report.available)
         self.assertIn("not reachable", report.summary)
 
+    def collect_buckets(self, buckets):
+        def get(base, path, **params):
+            if path == "buckets/":
+                return {name: {} for name in buckets}
+            name = path.split("/")[1]
+            return buckets[name]
+        with mock.patch.object(activitywatch, "_get", get):
+            return activitywatch.collect(self.config(), self.sites, self.tl)
+
+    def test_browser_url_places_minutes_the_title_cannot(self):
+        report = self.collect_buckets({
+            "aw-watcher-window_pc": [{"timestamp": iso(at(9, 0)), "duration": 600,
+                                      "data": {"app": "chrome.exe", "title": "Shopify Plus - Google Chrome"}}],
+            "aw-watcher-web-chrome": [{"timestamp": iso(at(9, 0)), "duration": 300,
+                                       "data": {"url": "https://admin.shopify.com/store/acme-shop/products?x=1", "title": "x"}},
+                                      {"timestamp": iso(at(9, 5)), "duration": 300,
+                                       "data": {"url": "https://example.org/docs/page", "title": "y"}}],
+        })
+        self.assertEqual(self.tl.per_key()["Acme"][1], 5.0)
+        self.assertEqual(report.extensions, {"web": True, "vscode": False})
+        self.assertIn("browser URLs: 5 min placed", report.summary)
+        self.assertIn("example.org/docs/page", report.needs_naming[0])  # short URL, no query string
+
+    def test_url_is_ignored_when_a_non_browser_window_is_in_front(self):
+        self.collect_buckets({
+            "aw-watcher-window_pc": [{"timestamp": iso(at(9, 0)), "duration": 300, "data": {"app": "Slack.exe", "title": "DM"}}],
+            "aw-watcher-web-chrome": [{"timestamp": iso(at(9, 0)), "duration": 300,
+                                       "data": {"url": "https://admin.shopify.com/store/acme-shop"}}],
+        })
+        self.assertNotIn("Acme", self.tl.per_key())
+
+    def test_vscode_project_places_editing(self):
+        report = self.collect_buckets({
+            "aw-watcher-window_pc": [],
+            "aw-watcher-vscode_pc": [{"timestamp": iso(at(14, 0)), "duration": 1200,
+                                      "data": {"project": "D:\\PROJECTS\\zeta-theme", "file": "a.liquid"}}],
+        })
+        self.assertEqual(self.tl.per_key()["Zeta"][1], 20.0)
+        self.assertIn("VS Code: 20 min placed", report.summary)
+
+
+class ManualNotesTest(Fixture):
+    def test_parse_duration(self):
+        from timesheet.sources import manual
+        self.assertEqual([manual.parse_duration(x) for x in ("30m", "1h", "1h30m", "1.5h", "90")], [30, 60, 90, 90, 90])
+        with self.assertRaises(ValueError):
+            manual.parse_duration("soon")
+
+    def test_notes_mark_time_and_unnamed_notes_are_flagged(self):
+        from timesheet.sources import manual
+        logs = self.root / "logs"
+        manual.add(logs, DAY, "Acme call about checkout", 30, at(15, 0))
+        manual.add(logs, DAY, "dentist", 20, at(16, 0))
+        cfg = Config(sources=Sources(), sites_file=self.root / "sites.txt", log_dir=logs)
+        rep = manual.collect(cfg, self.sites, self.tl)
+        per = self.tl.per_key()
+        self.assertEqual(per["Acme"][1], 30.0)
+        self.assertEqual(per["? note: dentist"][1], 20.0)
+        self.assertEqual(rep.summary, "Notes: 2 note(s), 50 min")
+        self.assertEqual(len(rep.needs_naming), 1)
+
+
+class ClaudeRepliesTest(ClaudeSessionsTest):
+    def test_replies_become_evidence_for_the_client_of_the_prompt(self):
+        long = "Restored the out-of-stock recommendations block on both product templates and merged it to main."
+        self.session("D--PROJECTS-acme", r"D:\PROJECTS\acme", [
+            (at(9, 0), "user", "please add the block"),
+            (at(9, 5), "assistant", long),
+            (at(9, 6), "user", "now the same on zeta"),
+            (at(9, 9), "assistant", "ok"),  # too short to describe anything
+        ])
+        self.collect()
+        kinds = [(k, text[:9]) for _, k, text in self.tl.evidence_for("Acme")]
+        self.assertIn(("reply", "Restored "), kinds)
+        self.assertFalse([e for e in self.tl.evidence_for("Zeta") if e[1] == "reply"])
+
+    def test_initial_prompt_is_the_sessions_first_prompt_with_paste_kept(self):
+        self.session("D--PROJECTS-acme", r"D:\PROJECTS\acme", [
+            (at(9, 0) - timedelta(days=1), "user", "do this: <pasted_content id=\"x\">Client brief here</pasted_content>"),
+            (at(9, 0), "user", "is it done"),
+            (at(9, 5), "assistant", "yes"),
+        ])
+        self.collect()
+        self.assertEqual(self.tl.initial_prompt("Acme"), "do this: Client brief here")
+
 
 if __name__ == "__main__":
     unittest.main()

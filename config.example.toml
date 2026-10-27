@@ -19,6 +19,8 @@ commit_lead_minutes = 30 # a commit stands for up to this much work before it
 activitywatch_url = "http://localhost:5600"
 carry_minutes = 30       # active minutes nobody placed inherit a client this close in time
 git_task_pattern = '(?:\bCU-|#|\b)([0-9]{2,3}[a-z][a-z0-9]{5,9})\b'  # ClickUp task ids in branch names / commit subjects
+calendar_ics = ""        # meetings: Google Calendar > Settings > your calendar > "Secret address in iCal format" (or a .ics path)
+my_emails = []           # your calendar addresses, to skip events you declined (git_author is added automatically)
 
 [clickup]
 token = ""               # personal API token (ClickUp > Settings > Apps), or set CLICKUP_TOKEN in the environment

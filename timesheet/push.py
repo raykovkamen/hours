@@ -65,6 +65,20 @@ class Plan:
         return [a for a in self.actions if not a.skipped]
 
 
+def pushed_minutes(log_dir: Path, day: date) -> int:
+    """Minutes really posted for the day according to the local push log (weekly view)."""
+    log = log_dir / f"push-{day.isoformat()}.jsonl"
+    total = 0
+    for line in log.read_text(encoding="utf-8").splitlines() if log.exists() else []:
+        try:
+            rec = json.loads(line)
+        except ValueError:
+            continue
+        if not rec.get("dry_run") and rec.get("entry_id"):
+            total += int(rec.get("minutes", 0))
+    return total
+
+
 def known_task(log_dir: Path, site: str, day: date) -> str:
     """The daily task an earlier real push created for this client and day, from the local push log."""
     log = log_dir / f"push-{day.isoformat()}.jsonl"

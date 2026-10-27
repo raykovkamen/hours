@@ -11,3 +11,4 @@ class Report:
     details: list[str] = field(default_factory=list)  # lines shown with --all
     needs_naming: list[str] = field(default_factory=list)  # lines always shown: evidence with an unnamed client
     available: bool = True
+    extensions: dict[str, bool] = field(default_factory=dict)  # optional add-ons the source found (check command)

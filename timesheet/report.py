@@ -11,7 +11,7 @@ from .sources import Report
 from .timeline import Timeline
 
 
-LABELS = {"activitywatch": "ActivityWatch", "claude": "Claude Code", "git": "Git"}
+LABELS = {"activitywatch": "ActivityWatch", "claude": "Claude Code", "git": "Git", "calendar": "Calendar", "manual": "Notes"}
 
 
 def hours(minutes: float) -> str:

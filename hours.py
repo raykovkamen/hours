@@ -2,6 +2,8 @@
 
     hours.py [DAY] [--all] [--json]                       print the day's table
     hours.py push [DAY] [--dry-run] [--assign SITE=TASK]  log the table into ClickUp as time entries
+    hours.py add "Client call" 30m [--at 14:00] [DAY]     note time no source can see (a call, a meeting)
+    hours.py week [DAY]                                   the week containing DAY: hours, gaps, what is unpushed
     hours.py check                                        verify the installation (config, sources, ClickUp)
 
 DAY is YYYY-MM-DD and defaults to today. Run with `py -3 -I` (Windows) or `python3 -I` (macOS/Linux).
@@ -23,16 +25,17 @@ from timesheet import __version__  # noqa: E402
 from timesheet import allocate, config, push, report  # noqa: E402
 from timesheet.clickup import ClickUp, ClickUpError  # noqa: E402
 from timesheet.sites import Sites  # noqa: E402
-from timesheet.sources import activitywatch, claude_sessions, git_commits  # noqa: E402
+from timesheet.sources import activitywatch, calendar_ics, claude_sessions, git_commits, manual  # noqa: E402
 from timesheet.timeline import Timeline  # noqa: E402
 
-COMMANDS = ("table", "push", "check")
+COMMANDS = ("table", "push", "add", "week", "check")
+SOURCES = (activitywatch, claude_sessions, git_commits, calendar_ics, manual)
 
 
 def build(cfg: config.Config, sites: Sites, day: date):
     """Collect every source for the day and lay the result out as table rows."""
     tl = Timeline(day, datetime.now().astimezone().tzinfo)
-    reports = [src.collect(cfg, sites, tl) for src in (activitywatch, claude_sessions, git_commits)]
+    reports = [src.collect(cfg, sites, tl) for src in SOURCES]
     tl.resolve_unplaced(cfg.sources.carry_minutes)
     slots = allocate.day_slots(tl.active_minutes(), cfg.workday)
     allocation = allocate.allocate(tl.per_key(), slots, cfg.workday.min_client_minutes)
@@ -100,6 +103,75 @@ def cmd_push(args, cfg, sites) -> int:
     return 0 if p.ok else 2
 
 
+def cmd_add(args, cfg, sites) -> int:
+    try:
+        minutes = manual.parse_duration(args.duration)
+        tz = datetime.now().astimezone().tzinfo
+        if args.at:
+            hh, mm = (int(x) for x in args.at.split(":"))
+            start = datetime.combine(args.day, datetime.min.time()).replace(hour=hh, minute=mm, tzinfo=tz)
+        elif args.day == date.today():
+            start = datetime.now().astimezone().replace(second=0, microsecond=0) - timedelta(minutes=minutes)
+        else:
+            sys.exit("add: --at HH:MM is required for another day")
+        manual.add(cfg.log_dir, args.day, args.text, minutes, start)
+    except ValueError as e:
+        sys.exit(f"add: {e}")
+    site = sites.match(args.text)
+    print(f"Noted {minutes} min at {start:%H:%M} on {args.day}: {args.text}"
+          + (f" -> {site}" if site else " -> no client matched (it will show as a ? row; add a sites.txt rule or name it)"))
+    print(f"Edit or remove notes in {manual.notes_file(cfg.log_dir, args.day)}")
+    return 0
+
+
+def cmd_week(args, cfg, sites) -> int:
+    import contextlib
+    import io
+    monday = args.day - timedelta(days=args.day.weekday())
+    days = [monday + timedelta(days=i) for i in range(7) if monday + timedelta(days=i) <= date.today()]
+    clients: dict[str, float] = {}
+    logged_by_day: dict[date, float] | None = None  # what ClickUp really holds; None = no token, use the push log
+    token = push.token_from(cfg.clickup.token)
+    if token:
+        try:
+            tz = datetime.now().astimezone().tzinfo
+            start = datetime.combine(monday, datetime.min.time()).replace(tzinfo=tz)
+            logged_by_day = {}
+            for e in ClickUp(token, cfg.clickup.team_id).entries(start, start + timedelta(days=7)):
+                logged_by_day[e.start.date()] = logged_by_day.get(e.start.date(), 0) + e.minutes
+        except ClickUpError as e:
+            print(f"(ClickUp not reachable, 'Logged' comes from the local push log: {e})")
+            logged_by_day = None
+    print(f"Week of {monday.isoformat()}")
+    print()
+    print("| Day | Tracked | Reported | Unknown | Unnamed rows | In ClickUp |")
+    print("|---|---|---|---|---|---|")
+    for d in days:
+        with contextlib.redirect_stdout(io.StringIO()):
+            tl, reports, rows, slots = build(cfg, sites, d)
+        per = tl.per_key()
+        for k, (_, mins) in per.items():
+            site = sites.split_key(k)[0]
+            clients[site] = clients.get(site, 0) + mins
+        reported = sum(r.minutes for r in rows if r.key != allocate.BREAK)
+        unknown = per.get("Unknown", (0, 0.0))[1]
+        unnamed = sum(1 for r in rows if r.key.startswith("?"))
+        pushed = int(round(logged_by_day.get(d, 0))) if logged_by_day is not None else push.pushed_minutes(cfg.log_dir, d)
+        state = ("-" if not reported else "complete" if pushed >= reported else f"{report.hours(pushed)}h of {report.hours(reported)}h"
+                 if pushed else "nothing")
+        print(f"| {d:%a %d.%m} | {report.hours(tl.active_minutes())}h | {report.hours(reported)}h | "
+              f"{int(round(unknown))} min | {unnamed or ''} | {state} |")
+    if clients:
+        print()
+        print("Tracked per client this week:")
+        print()
+        print("| Client | Hours |")
+        print("|---|---|")
+        for site, mins in sorted(clients.items(), key=lambda kv: -kv[1]):
+            print(f"| {site[:50]} | {report.hours(mins)}h |")
+    return 0
+
+
 def cmd_check(args, cfg, sites) -> int:
     ok = True
 
@@ -118,6 +190,17 @@ def cmd_check(args, cfg, sites) -> int:
     tl = Timeline(date.today(), datetime.now().astimezone().tzinfo)
     aw = activitywatch.collect(cfg, sites, tl)
     line(aw.available, aw.summary)
+    if aw.available:
+        web, code = aw.extensions.get("web"), aw.extensions.get("vscode")
+        print("  " + ("ok   browser extension found" if web else
+                      "tip  browser extension missing: install 'ActivityWatch Web Watcher' so tab URLs place browser work"))
+        print("  " + ("ok   VS Code extension found" if code else
+                      "tip  VS Code extension missing: code --install-extension ActivityWatch.aw-watcher-vscode"))
+    if cfg.sources.calendar_ics:
+        cal = calendar_ics.collect(cfg, sites, tl)
+        line(cal.available, cal.summary)
+    else:
+        print("  tip  calendar: not configured - set [sources] calendar_ics to count meetings")
     token = push.token_from(cfg.clickup.token)
     if not token:
         line(False, "clickup: no token (set [clickup] token in config.toml or CLICKUP_TOKEN) - push is unavailable")
@@ -140,6 +223,10 @@ def main(argv: list[str] | None = None) -> int:
                                  description=__doc__.splitlines()[0])
     ap.add_argument("--config", type=Path, help="config file (default: config.toml next to this script)")
     ap.add_argument("--version", action="version", version=f"hours {__version__}")
+    if command == "add":
+        ap.add_argument("text", help='what it was, naming the client: "Josera call about the ES store"')
+        ap.add_argument("duration", help="30m, 1h, 1h30m")
+        ap.add_argument("--at", metavar="HH:MM", help="start time (default: it just ended)")
     if command != "check":
         ap.add_argument("day", nargs="?", type=date.fromisoformat, default=date.today(), help="YYYY-MM-DD (default: today)")
     if command == "table":
@@ -163,7 +250,8 @@ def main(argv: list[str] | None = None) -> int:
 
     cfg = config.load(args.config)
     sites = Sites(cfg.sites_file, cfg.sites_example)
-    return {"table": cmd_table, "push": cmd_push, "check": cmd_check}[command](args, cfg, sites)
+    commands = {"table": cmd_table, "push": cmd_push, "add": cmd_add, "week": cmd_week, "check": cmd_check}
+    return commands[command](args, cfg, sites)
 
 
 if __name__ == "__main__":
