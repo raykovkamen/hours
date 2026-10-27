@@ -40,8 +40,11 @@ tool records what it pushed in `logs/` on the developer's machine.
 - ActivityWatch records window titles and application names on the developer's own machine. Nothing is
   uploaded; `hours` reads it locally. Titles that matched no client are shown only in the developer's own
   terminal so a rule can be added.
-- Nothing from the evidence reaches ClickUp except the task, start time, duration and the text
-  `hours: <client>`.
+- What reaches ClickUp: each time entry (task, start time, duration, the text `hours: <client>`). In
+  create mode (`[clickup] mode = "create"`) also a new task per client per day, named after the work, and
+  its **Initial prompt** field: the developer's first Claude prompt for that work, including any pasted
+  client text. It is visible to everyone with access to the task. Developers who do not want that set
+  `prompt_field = ""`. Window titles, other prompts and commit contents never leave the machine.
 - Developers install ActivityWatch themselves, knowing the above. It is optional: without it the day is
   built from Claude sessions and commits only, and the listing says so.
 

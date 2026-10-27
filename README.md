@@ -185,8 +185,10 @@ titles (`acme.com = Acme`) so browser work gets placed. Unknown project folder? 
 - `--all` shows where every minute came from. Read it before you push, and *definitely* before you argue.
 - The pushed entries are **your** statement of your time, the same as if you'd typed them in. We're
   counsel, not the defendant.
-- Everything runs locally and reads only your own files. Only task, start, duration and
-  `hours: <client>` ever reach ClickUp.
+- Everything runs locally and reads only your own files. What reaches ClickUp: the time entry (task,
+  start, duration, `hours: <client>`) and, in create mode, the new task's title and its **Initial prompt**
+  field — your first prompt for that work, pasted client text included. Anyone who can see the task can
+  read it. Set `prompt_field = ""` if that's more than you want on the record.
 - No scheduled jobs, no cron, no hooks. This firm only works when you call.
 
 ---
