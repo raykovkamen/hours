@@ -216,7 +216,7 @@ python -m unittest discover -s tests -t .
 `hours.py` is the front desk. `timesheet/` is the firm: `config.py`, `sites.py`, `timeline.py` (the grid),
 `allocate.py` (slots and the schedule), `report.py`, `clickup.py` (the API), `push.py` (the paperwork),
 and `sources/` with one file per witness. Adding a witness — a calendar, a ticket system — is one module
-and one line. Seventy tests cover the lot, including a fake ClickUp and a real temporary git repo.
+and one line. Sixty-seven tests cover the lot, including a fake ClickUp and a real temporary git repo.
 
 ---
 
