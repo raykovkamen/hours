@@ -44,7 +44,8 @@ tool records what it pushed in `logs/` on the developer's machine.
   create mode (`[clickup] mode = "create"`) also a new task per client per day, named after the work, and
   its **Initial prompt** field: the developer's first Claude prompt for that work, including any pasted
   client text. It is visible to everyone with access to the task. Developers who do not want that set
-  `prompt_field = ""`. Window titles, other prompts and commit contents never leave the machine.
+  `prompt_field = ""`. Without an explicit title the first commit subject of the day becomes the task name.
+  Window titles and all other prompts never leave the machine.
 - Developers install ActivityWatch themselves, knowing the above. It is optional: without it the day is
   built from Claude sessions and commits only, and the listing says so.
 
