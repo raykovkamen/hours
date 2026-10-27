@@ -259,8 +259,8 @@ python -m unittest discover -s tests -t .
 and `sources/` with one file per witness: `activitywatch.py`, `claude_sessions.py`, `git_commits.py`,
 `calendar_ics.py` (with its own recurrence engine — weekly standups, last-Friday retros, moved meetings),
 `manual.py`. Adding a witness — a calendar, a ticket system — is one module
-and one line. Ninety-nine tests cover the lot, including a fake ClickUp, a fake ActivityWatch, a real temporary
-git repo and a calendar full of awkward recurring meetings.
+and one line. A hundred and four tests cover the lot, including a fake ClickUp, a fake ActivityWatch, a real temporary
+git repo, a calendar full of awkward recurring meetings and the night the clocks go back.
 
 ---
 

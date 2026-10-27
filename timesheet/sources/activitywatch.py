@@ -47,7 +47,7 @@ def _minutes(tl: Timeline, start: datetime, seconds: float) -> range:
     """Minute indexes an event covers: [start, end) with a partial last minute counted, at least one."""
     end = start + timedelta(seconds=seconds)
     first, last = tl.minute(start), tl.minute(end)
-    if (end - tl.day_start).total_seconds() % 60:
+    if end.second or end.microsecond:
         last += 1
     return range(max(0, first), min(24 * 60, max(last, first + 1)))
 
@@ -79,7 +79,7 @@ def collect(cfg: Config, sites: Sites, tl: Timeline) -> Report:
         return Report(SOURCE, "ActivityWatch: running, but no window watcher data yet", available=False)
 
     start = tl.day_start.astimezone(timezone.utc).isoformat()
-    end = (tl.day_start + timedelta(days=1)).astimezone(timezone.utc).isoformat()
+    end = tl.day_end.astimezone(timezone.utc).isoformat()
 
     def events(bucket: str) -> list[dict]:
         return [e for e in _get(base, f"buckets/{bucket}/events", start=start, end=end, limit=-1)
@@ -115,7 +115,7 @@ def collect(cfg: Config, sites: Sites, tl: Timeline) -> Report:
             site = url_site or title_site  # the address is more precise than a tab title
             with_url += bool(url)
             only_url += bool(url_site and not title_site)
-            tl.mark(tl.day_start + timedelta(minutes=m), tl.day_start + timedelta(minutes=m + 1), site, SOURCE)
+            tl.mark_minutes((m,), site, SOURCE)
             minutes += 1
             if not site:
                 unmatched[_short_url(url) if url else title[:70]] += 1
@@ -129,8 +129,7 @@ def collect(cfg: Config, sites: Sites, tl: Timeline) -> Report:
             for m in _minutes(tl, _ts(e["timestamp"]), e["duration"]):
                 if m in away:
                     continue
-                stamp = tl.day_start + timedelta(minutes=m)
-                tl.mark(stamp, stamp + timedelta(minutes=1), site, SOURCE)
+                tl.mark_minutes((m,), site, SOURCE)
                 if site:
                     by_project += 1
                 elif project:

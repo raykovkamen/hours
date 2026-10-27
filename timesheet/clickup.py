@@ -154,7 +154,7 @@ class ClickUp:
         out = []
         for e in data:
             task = e.get("task") or {}
-            start = datetime.fromtimestamp(int(e["start"]) / 1000, tz=day_start.tzinfo)
+            start = datetime.fromtimestamp(int(e["start"]) / 1000).astimezone()  # local, with that moment's offset
             out.append(Entry(str(e["id"]), str(task.get("id", "")), task.get("name", ""), start,
                              int(e.get("duration", 0)) / 60000, e.get("description") or ""))
         return out

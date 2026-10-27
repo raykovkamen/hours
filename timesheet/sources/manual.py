@@ -55,8 +55,6 @@ def collect(cfg: Config, sites: Sites, tl: Timeline) -> Report:
             minutes, text = int(rec["minutes"]), str(rec["text"])
         except (ValueError, KeyError, TypeError):
             continue
-        if start.tzinfo is None:
-            start = start.replace(tzinfo=tl.tz)
         site = sites.match(text)
         key = site or f"? note: {text[:60]}"
         tl.mark(start, start + timedelta(minutes=minutes), key, SOURCE)

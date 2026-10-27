@@ -255,7 +255,7 @@ def collect(cfg: Config, sites: Sites, tl: Timeline) -> Report:
         text = _load(source)
     except (urllib.error.URLError, OSError, ValueError) as exc:
         return Report(SOURCE, f"Calendar: could not be read ({exc.__class__.__name__})", available=False)
-    found = meetings(parse(text, tl.tz, cfg.sources.my_emails), tl.day, tl.tz)
+    found = meetings(parse(text, tl.zone, cfg.sources.my_emails), tl.day, tl.zone)
     details, needs, minutes = [], [], 0
     for start, end, ev in found:
         site = sites.match(ev.summary) or sites.match(f"{ev.description} {ev.location}")

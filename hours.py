@@ -26,7 +26,7 @@ from timesheet import allocate, config, push, report  # noqa: E402
 from timesheet.clickup import ClickUp, ClickUpError  # noqa: E402
 from timesheet.sites import Sites  # noqa: E402
 from timesheet.sources import activitywatch, calendar_ics, claude_sessions, git_commits, manual  # noqa: E402
-from timesheet.timeline import Timeline  # noqa: E402
+from timesheet.timeline import Timeline, local_midnight  # noqa: E402
 
 COMMANDS = ("table", "push", "add", "week", "check")
 SOURCES = (activitywatch, claude_sessions, git_commits, calendar_ics, manual)
@@ -34,7 +34,7 @@ SOURCES = (activitywatch, claude_sessions, git_commits, calendar_ics, manual)
 
 def build(cfg: config.Config, sites: Sites, day: date):
     """Collect every source for the day and lay the result out as table rows."""
-    tl = Timeline(day, datetime.now().astimezone().tzinfo)
+    tl = Timeline(day)
     reports = [src.collect(cfg, sites, tl) for src in SOURCES]
     tl.resolve_unplaced(cfg.sources.carry_minutes)
     slots = allocate.day_slots(tl.active_minutes(), cfg.workday)
@@ -86,9 +86,7 @@ def cmd_push(args, cfg, sites) -> int:
             return 2
     try:
         api = ClickUp(push.token_from(cfg.clickup.token), cfg.clickup.team_id)
-        tz = datetime.now().astimezone().tzinfo
-        day_start = datetime.combine(args.day, datetime.min.time()).replace(tzinfo=tz)
-        logged = api.entries(day_start, day_start + timedelta(days=1))
+        logged = api.entries(local_midnight(args.day), local_midnight(args.day + timedelta(days=1)))
         mode = "create" if args.create else cfg.clickup.mode
         titles = pairs(args.title, "--title")
         prompt_over = pairs(args.prompt, "--prompt")
@@ -106,10 +104,9 @@ def cmd_push(args, cfg, sites) -> int:
 def cmd_add(args, cfg, sites) -> int:
     try:
         minutes = manual.parse_duration(args.duration)
-        tz = datetime.now().astimezone().tzinfo
         if args.at:
             hh, mm = (int(x) for x in args.at.split(":"))
-            start = datetime.combine(args.day, datetime.min.time()).replace(hour=hh, minute=mm, tzinfo=tz)
+            start = datetime.combine(args.day, datetime.min.time()).replace(hour=hh, minute=mm).astimezone()
         elif args.day == date.today():
             start = datetime.now().astimezone().replace(second=0, microsecond=0) - timedelta(minutes=minutes)
         else:
@@ -134,10 +131,8 @@ def cmd_week(args, cfg, sites) -> int:
     token = push.token_from(cfg.clickup.token)
     if token:
         try:
-            tz = datetime.now().astimezone().tzinfo
-            start = datetime.combine(monday, datetime.min.time()).replace(tzinfo=tz)
             logged_by_day = {}
-            for e in ClickUp(token, cfg.clickup.team_id).entries(start, start + timedelta(days=7)):
+            for e in ClickUp(token, cfg.clickup.team_id).entries(local_midnight(monday), local_midnight(monday + timedelta(days=7))):
                 logged_by_day[e.start.date()] = logged_by_day.get(e.start.date(), 0) + e.minutes
         except ClickUpError as e:
             print(f"(ClickUp not reachable, 'Logged' comes from the local push log: {e})")
@@ -187,7 +182,7 @@ def cmd_check(args, cfg, sites) -> int:
     author = cfg.sources.git_author or git_commits._git(["config", "--global", "user.email"]).strip()
     line(bool(author), f"git author: {author or 'not set (git config --global user.email)'}")
     line(cfg.sources.claude_projects.is_dir(), f"claude projects: {cfg.sources.claude_projects}")
-    tl = Timeline(date.today(), datetime.now().astimezone().tzinfo)
+    tl = Timeline(date.today())
     aw = activitywatch.collect(cfg, sites, tl)
     line(aw.available, aw.summary)
     if aw.available:
