@@ -17,8 +17,19 @@ class Timeline:
         self.claims: dict[int, set[str]] = defaultdict(set)  # minute -> row keys claiming it
         self.active: set[int] = set()  # minutes some source saw the user working
         self.by_source: dict[str, int] = defaultdict(int)  # minutes each source contributed
+        self.evidence: dict[str, list[tuple[datetime, str, str]]] = defaultdict(list)  # key -> (time, kind, text)
 
     # -- writing -------------------------------------------------------------------
+    def note(self, key: str, at: datetime, kind: str, text: str) -> None:
+        """Remember what was done for a key (a commit subject, a prompt) - material for task titles."""
+        text = " ".join(text.split())
+        if key and text:
+            self.evidence[key].append((at, kind, text))
+
+    def evidence_for(self, site: str) -> list[tuple[datetime, str, str]]:
+        """Everything noted for a site, across its task-specific keys, in time order."""
+        out = [e for k, items in self.evidence.items() if k == site or k.startswith(f"{site} @") for e in items]
+        return sorted(out, key=lambda e: e[0])
     def minute(self, at: datetime) -> int:
         if at.tzinfo is None:
             at = at.replace(tzinfo=self.tz)

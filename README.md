@@ -117,7 +117,7 @@ Or, if you prefer to do things yourself (respect):
 
 ```
 hours.py [DAY] [--all] [--json]
-hours.py push [DAY] [--dry-run] [--assign "Site=taskid"] [--only Site] [--create]
+hours.py push [DAY] [--dry-run] [--assign "Site=taskid"] [--only Site] [--create] [--title "Site=…"]
 hours.py check
 ```
 
@@ -151,7 +151,11 @@ This is the only thing we do that writes anywhere, so it's done by code, not by 
 **Or let us open a fresh file.** With `[clickup] mode = "create"` (or `push --create`) we don't touch
 existing tasks at all: each client gets one new task per day — `Acme – 2026-10-27`, status *in progress*,
 assigned to you — in the client's list, and the day's time goes there. Push again later and we find
-that task instead of opening a second one. The list comes from `list:<id>` on the client's line in
+that task instead of opening a second one — even if you renamed it.
+The title says what you did: `/hours push` has Claude read your commits and prompts and write it
+(`Parfium – Checkout VAT field and ERP SKU sync`), you approve it in the dry run, and the description
+lists the day's commits. Running it by hand? `--title "Acme=…"`, or we take your first commit subject.
+Your prompts never leave the building — they inform the title, they don't appear in it. The list comes from `list:<id>` on the client's line in
 `sites.txt` (the number in the list's URL), or `[clickup] list_id` as the catch-all.
 
 Where does the task come from? Branch name, commit subject, a ClickUp link in a prompt, or the default

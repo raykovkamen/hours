@@ -49,7 +49,7 @@ class ClickUpConfig:
     mode: str = "existing"  # "existing": log on the task from branch/prompt/sites.txt; "create": one new task per client per day
     list_id: str = ""  # create mode: list for clients without their own `list:ID` in sites.txt
     task_status: str = "in progress"  # create mode: status of the new task (falls back to the list default)
-    task_name: str = "{site} – {date}"  # create mode: name of the daily task
+    task_name: str = "{site} – {title}"  # create mode: {site}, {title} (from commits or --title), {date}
 
 
 @dataclass(frozen=True)

@@ -74,6 +74,7 @@ def collect(cfg: Config, sites: Sites, tl: Timeline) -> Report:
                     start = prev
                 tl.mark(start, when, key, SOURCE)
                 commits.append((when, name, key, subject))
+                tl.note(key, when, "commit", subject)
                 prev = when
     commits.sort()
     per_repo = ", ".join(f"{r} {n}" for r, n in Counter(c[1] for c in commits).most_common())

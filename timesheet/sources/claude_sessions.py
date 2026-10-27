@@ -139,6 +139,8 @@ def collect(cfg: Config, sites: Sites, tl: Timeline) -> Report:
             if b - a <= idle:
                 key = next((k for t, k in reversed(switches) if t <= a), switches[0][1])
                 tl.mark(a, b, key, SOURCE)
+        for (t, text), (_, key) in zip(prompts, switches):
+            tl.note(key, t, "prompt", label(text)[:200])
         sessions.append(Session(stamps[0], stamps[-1], folder, cwd or "", active, prompts, switches))
 
     sessions.sort(key=lambda s: s.start)

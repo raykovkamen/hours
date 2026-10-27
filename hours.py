@@ -54,6 +54,17 @@ def cmd_table(args, cfg, sites) -> int:
     return 0
 
 
+def pairs(items: list[str] | None, flag: str) -> dict[str, str]:
+    """["Site=text", ...] -> {"Site": "text"}."""
+    out = {}
+    for item in items or []:
+        site, _, text = item.partition("=")
+        if not site.strip() or not text.strip():
+            sys.exit(f"{flag} expects SITE=TEXT, got {item!r}")
+        out[site.strip()] = text.strip()
+    return out
+
+
 def cmd_push(args, cfg, sites) -> int:
     assign = {}
     for item in args.assign or []:
@@ -76,7 +87,9 @@ def cmd_push(args, cfg, sites) -> int:
         day_start = datetime.combine(args.day, datetime.min.time()).replace(tzinfo=tz)
         logged = api.entries(day_start, day_start + timedelta(days=1))
         mode = "create" if args.create else cfg.clickup.mode
-        p = push.plan(args.day, rows, sites, logged, assign, mode, cfg.clickup.list_id, cfg.clickup.task_name)
+        titles, summaries = pairs(args.title, "--title"), pairs(args.summary, "--summary")
+        p = push.plan(args.day, rows, sites, logged, assign, mode, cfg.clickup.list_id, cfg.clickup.task_name,
+                      titles, tl.evidence_for, summaries)
         push.execute(p, api, args.billable or cfg.clickup.billable, args.dry_run, cfg.log_dir, cfg.clickup.task_status)
     except ClickUpError as e:
         print(f"Push failed: {e}")
@@ -135,6 +148,10 @@ def main(argv: list[str] | None = None) -> int:
         ap.add_argument("--assign", action="append", metavar="SITE=TASK", help="task for a client, this push only")
         ap.add_argument("--billable", action="store_true", help="mark the entries billable")
         ap.add_argument("--only", action="append", metavar="SITE", help="push only this client's rows (repeatable)")
+        ap.add_argument("--title", action="append", metavar="SITE=TITLE",
+                        help="create mode: title of the client's daily task (default: from the day's commits)")
+        ap.add_argument("--summary", action="append", metavar="SITE=TEXT",
+                        help="create mode: summary at the top of the task description")
         ap.add_argument("--create", action="store_true", help="create one 'in progress' task per client for the day "
                         "and log the time there (same as [clickup] mode = \"create\")")
     args = ap.parse_args(argv)

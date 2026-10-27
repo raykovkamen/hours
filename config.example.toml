@@ -28,4 +28,4 @@ mode = "existing"       # "existing": log on the task from branch/commit/prompt/
                         # "create":   one new "in progress" task per client per day, time logged there
 list_id = ""            # create mode: list for clients without list:<id> in sites.txt
 task_status = "in progress"
-task_name = "{site} – {date}"
+task_name = "{site} – {title}"   # {title}: from --title, else the day's commits, else the date

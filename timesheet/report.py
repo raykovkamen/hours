@@ -77,4 +77,7 @@ def as_json(day: date, rows: list[Row], sites: Sites, tl: Timeline, reports: lis
         "tracked_minutes": tl.active_minutes(),
         "sources": {r.name: {"available": r.available, "summary": r.summary} for r in reports},
         "rows": entries,
+        # what was done per client - material for descriptive task titles (prompts are for the user's eyes only)
+        "evidence": {site: [{"time": f"{t:%H:%M}", "kind": kind, "text": text} for t, kind, text in tl.evidence_for(site)]
+                     for site in dict.fromkeys(e["site"] for e in entries)},
     }, ensure_ascii=False, indent=2)

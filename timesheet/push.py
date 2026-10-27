@@ -38,6 +38,7 @@ class Action:
     entry_id: str = ""
     list_id: str = ""  # create mode
     task_name: str = ""  # create mode
+    description: str = ""  # create mode: task description (work done + lookup marker)
     created: bool = False  # create mode: the task was created by this run (or would be, in a dry run)
 
     @property
@@ -62,9 +63,44 @@ class Plan:
         return [a for a in self.actions if not a.skipped]
 
 
+def marker(site: str, day: date) -> str:
+    """Hidden key in the daily task's description, so a repeated push finds it even after a rename."""
+    return f"hours-key: {site} | {day.isoformat()}"
+
+
+def auto_title(evidence: list[tuple[datetime, str, str]], limit: int = 70) -> str:
+    """A title from the day's commits: the first real one, plus how many more. Empty when there were none."""
+    commits = [text for _, kind, text in evidence if kind == "commit" and not text.lower().startswith("merge ")]
+    if not commits:
+        return ""
+    title = commits[0] if len(commits[0]) <= limit else commits[0][:limit - 1].rstrip() + "…"
+    return f"{title} (+{len(commits) - 1} more)" if len(commits) > 1 else title
+
+
+def describe(site: str, day: date, evidence: list[tuple[datetime, str, str]], summary: str = "") -> str:
+    """Task description: optional summary, the day's commits (never prompts - they can hold client material)."""
+    commits = [(t, text) for t, kind, text in evidence if kind == "commit" and not text.lower().startswith("merge ")]
+    out = [summary.strip(), ""] if summary.strip() else []
+    if commits:
+        out.append("**Commits**")
+        out += [f"- {t:%H:%M} {text}" for t, text in commits[:20]]
+        out.append("")
+    out.append(f"_Logged by hours on {day.isoformat()}._")
+    out.append(f"`{marker(site, day)}`")
+    return "\n".join(out)
+
+
 def plan(day: date, rows: list[Row], sites: Sites, logged: list[Entry], assign: dict[str, str],
-         mode: str = "existing", default_list: str = "", task_name: str = "{site} – {date}") -> Plan:
-    """Decide what to post. `assign` maps a site to a task id (existing mode) or `list:ID` (create mode)."""
+         mode: str = "existing", default_list: str = "", task_name: str = "{site} – {title}",
+         titles: dict[str, str] | None = None, evidence=None, summaries: dict[str, str] | None = None) -> Plan:
+    """Decide what to post. `assign` maps a site to a task id (existing mode) or `list:ID` (create mode).
+
+    Create mode only: `titles` (site -> title) override the automatic title from the day's commits,
+    `evidence` (site -> [(time, kind, text)]) feeds that automatic title and the task description,
+    `summaries` (site -> text) go at the top of the description.
+    """
+    titles, summaries = titles or {}, summaries or {}
+    evidence = evidence or (lambda site: [])
     p = Plan(day, mode)
     for e in logged:
         p.logged_by_task[e.task_id] = p.logged_by_task.get(e.task_id, 0) + e.minutes
@@ -98,8 +134,11 @@ def plan(day: date, rows: list[Row], sites: Sites, logged: list[Entry], assign: 
     for key, minutes in totals.items():
         start, extra = first[key]
         if mode == "create":
-            name = task_name.format(site=key, date=day.isoformat())
-            p.actions.append(Action("", key, start, minutes, minutes, 0, list_id=extra, task_name=name))
+            ev = evidence(key)
+            title = titles.get(key) or auto_title(ev) or day.isoformat()
+            name = task_name.format(site=key, date=day.isoformat(), title=title)
+            p.actions.append(Action("", key, start, minutes, minutes, 0, list_id=extra, task_name=name,
+                                    description=describe(key, day, ev, summaries.get(key, ""))))
         else:
             already = int(round(p.logged_by_task.get(key, 0)))
             p.actions.append(Action(key, extra, start, minutes - already, minutes, already))
@@ -108,7 +147,7 @@ def plan(day: date, rows: list[Row], sites: Sites, logged: list[Entry], assign: 
 
 def _resolve_daily_task(p: Plan, a: Action, api: ClickUp, status: str, me: int | None, dry_run: bool) -> None:
     day_start = datetime.combine(p.day, time.min).astimezone()
-    found = api.find_task(a.list_id, a.task_name, day_start)
+    found = api.find_task(a.list_id, a.task_name, day_start, marker(a.site, p.day))
     if found:
         a.task, a.task_id = found, found.id
         a.logged_minutes = int(round(p.logged_by_task.get(found.id, 0)))
@@ -116,7 +155,7 @@ def _resolve_daily_task(p: Plan, a: Action, api: ClickUp, status: str, me: int |
     elif dry_run:
         a.created = True
     else:
-        a.task = api.create_task(a.list_id, a.task_name, status, me)
+        a.task = api.create_task(a.list_id, a.task_name, status, me, a.description)
         a.task_id, a.created = a.task.id, True
 
 
