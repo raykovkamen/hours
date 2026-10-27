@@ -1,57 +1,103 @@
-# 🕴️ its-all-billable-man
+# 🕴️ hours
 
-### *Did you forget to track your hours? Did you "work" two hours and need to bill six?*
+### *Forgot to start the timer? Worked on four clients at once and ClickUp is still empty at 18:00?*
 ### **Better call `/hours`!**
 
 ---
 
 > *"Hi. I'm your timesheet. Did you know that you have rights? The Constitution says you do. And so do I.
-> I believe that until proven otherwise, every hour you spent near a keyboard is a billable hour."*
+> I believe that until proven otherwise, every minute you spent working is a minute that deserves
+> to be on the record. Not one more. Not one less."*
 
-Clients asking where the day went? Project manager squinting at an empty ClickUp?
-Spent the afternoon "researching" with a coffee in your hand?
+Project manager squinting at an empty ClickUp? Can't remember whether the Shelly thing was before or after
+the Josera thing? Spent the afternoon in Slack "aligning"?
 
-**Don't panic. Don't confess. Don't touch that timer.**
+**Don't panic. Don't guess. Don't touch that timer.**
 
-One command. Zero memory required. Six hours, *minimum*. It's all good, man. ⚖️
+One command. Zero memory required. Three witnesses who were there the whole time. It's all good, man. ⚖️
+
+(For the version of this document with the jokes removed, see [`docs/TEAM-POLICY.md`](docs/TEAM-POLICY.md).
+That's the one the firm actually operates under.)
 
 ---
 
-## 💼 What we do for you
+## 👀 Our witnesses
 
-| Your problem | Our solution |
-|---|---|
-| You didn't track anything | We read **every** Claude Code session you had today, in every project. We remember so you don't have to. |
-| You worked 2 hours | We round that up to a respectable **6h**. Quiet days are a *private matter*. |
-| You worked 2 hours on 5 clients at once | Parallel sessions **share** the clock. We're creative, not criminal. |
-| A 1-minute question about another store | That's a **0.5h consultation**, my friend. Every client gets a minimum. Ask any lawyer. |
-| You left Claude running while you got a sandwich | Active time. Your AI was *working*. You were *supervising*. |
-| You took a 2-hour lunch | We find your longest pause between 11:00 and 15:00 and call it a **1h break**. Nobody needs to know the rest. |
-| You mentioned another client's URL by accident | The session moves to that client. Mistakes happen. Check `--all` before the subpoena arrives. |
+We don't ask you what happened. We ask the people who saw it.
+
+| Witness | Testimony | How they know which client |
+|---|---|---|
+| **ActivityWatch** | Which window was in front, every few seconds, with away-from-keyboard time struck from the record. Sees the admin, the theme editor, Slack, email, the call. | The window title. VS Code says the folder, the browser says the store. Matched against `sites.txt`. |
+| **Claude Code** | Every session you had today, in every project. Gaps over 15 minutes don't count — your AI was working, but you were *supervising* elsewhere. | The project folder. Name another client in a prompt and the session follows it. Paste a ClickUp link and it follows the task. |
+| **git** | Your commits. Each one vouches for up to 30 minutes of honest labour before it, capped at the previous commit. | The repository. A task id in the branch name (`feature/86cabc123-header`) or the commit subject names the task. |
+
+They testify onto a one-minute grid. Then:
+
+- A minute is **on the clock** when any witness saw you working.
+- Two clients claim the same minute? They **share it**. We're creative, not criminal.
+- A minute nobody could place (an unmatched window title) **inherits the nearest client** within
+  30 minutes. You were on Slack *about* the same thing. Probably.
+- Still nobody? It goes on the table as **Unknown**. We don't make evidence disappear. We *flag* it.
+
+---
+
+## 🧾 What you'll be billed
+
+- **Tracked time, rounded to 15 minutes.** Every client gets at least one step — a one-minute question
+  is a fifteen-minute consultation, my friend. Ask any lawyer.
+- **A 1h break**, placed on your longest real pause between 11:00 and 15:00. Took two hours? We only need
+  to know about one of them.
+- **Nothing padded, nothing capped — by default.** `min_hours` and `max_hours` in `config.toml` can bound
+  the reported day if your firm bills that way. The footer always prints the real tracked time next to
+  it, so when the subpoena arrives, the two numbers are not confused. We learned that one the hard way.
 
 ---
 
 ## 🤝 How to become a client
 
-Three steps. No retainer. No questions asked. *Especially* no questions asked.
+Three steps. No retainer. One question asked, and it's `check`.
 
 **macOS / Linux**
 ```bash
-git clone https://github.com/raykovkamen/its-all-billable-man.git ~/.claude/skills/hours
-cp ~/.claude/skills/hours/sites.example.txt ~/.claude/skills/hours/sites.txt
+git clone https://github.com/raykovkamen/hours.git ~/.claude/skills/hours
+cd ~/.claude/skills/hours
+cp config.example.toml config.toml && cp sites.example.txt sites.txt
+python3 -I hours.py check
 ```
 
 **Windows (PowerShell)**
 ```powershell
-git clone https://github.com/raykovkamen/its-all-billable-man.git "$env:USERPROFILE\.claude\skills\hours"
-Copy-Item "$env:USERPROFILE\.claude\skills\hours\sites.example.txt" "$env:USERPROFILE\.claude\skills\hours\sites.txt"
+git clone https://github.com/raykovkamen/hours.git "$env:USERPROFILE\.claude\skills\hours"
+cd "$env:USERPROFILE\.claude\skills\hours"
+Copy-Item config.example.toml config.toml; Copy-Item sites.example.txt sites.txt
+py -3 -I hours.py check
 ```
 
-Then open `sites.txt` and list your clients (`pattern = Site`, e.g. `craftberry = Craftberry`).
-It's git-ignored, so your client list never leaves the building.
+`check` tells you exactly what's missing: your repository folders (`git_roots`), your clients
+(`sites.txt`), ActivityWatch, the ClickUp token. Fix the `FAIL` lines, run it again, done. Both personal
+files are git-ignored. *Attorney–client privilege.*
 
-Requires Python 3.9+ and Claude Code. Restart Claude Code and `/hours` is ready to take your case.
-To get the latest legal strategy: `git pull` in that folder.
+Requires Python 3.11+, git, Claude Code. Restart Claude Code and `/hours` is ready to take your case.
+Latest legal strategy: `git pull` in that folder.
+
+### 🕵️ Retaining the first witness
+
+ActivityWatch is optional, but without it we only have Claude and git, and they didn't see the afternoon
+you spent in the Shopify admin.
+
+```
+winget install --id ActivityWatch.ActivityWatch --exact    # Windows
+brew install --cask activitywatch                          # macOS
+```
+
+Start it once. It lives in the tray, starts with the system, and **never leaves your machine** —
+we read it at `localhost:5600` and that's as far as it goes.
+
+### 🔑 The ClickUp token
+
+Settings → Apps → API Token in ClickUp. Put it in `config.toml` under `[clickup] token`, or export
+`CLICKUP_TOKEN`. It reads your own time entries and writes new ones. It is never printed, never logged,
+and you never paste it into a chat. Not even to me.
 
 ---
 
@@ -60,59 +106,89 @@ To get the latest legal strategy: `git pull` in that folder.
 In Claude Code:
 
 ```
-/hours
-/hours 2026-10-20      # for when the client asks about last Tuesday
+/hours                 today's table
+/hours 2026-10-20      for when the client asks about last Tuesday
+/hours push            put it on the record in ClickUp (we show you the plan first)
+/hours check           is everything in order?
 ```
 
 Or, if you prefer to do things yourself (respect):
 
 ```
-python3 -I extract_sessions.py [YYYY-MM-DD] [--all]     # macOS / Linux
-py -3 -I extract_sessions.py [YYYY-MM-DD] [--all]       # Windows
+hours.py [DAY] [--all] [--json]
+hours.py push [DAY] [--dry-run] [--assign "Site=taskid"]
+hours.py check
 ```
 
-You'll receive a clean, professional, court-ready table:
+Prefix with `py -3 -I` on Windows, `python3 -I` elsewhere. You'll receive a clean, professional,
+court-ready table:
 
-| Time | Hours | Site |
-|---|---|---|
-| 09:00–12:00 | 3.0 | Craftberry |
-| 12:30–13:30 | 1.0 | Break |
-| ... | ... | ... |
-| **Total** | **6h** (+1h break) | |
+| Time | Hours | Site | ClickUp task |
+|---|---|---|---|
+| 09:00–10:30 | 1.5 | Acme | 86c9abc12 |
+| 10:30–12:00 | 1.5 | Zeta | — |
+| 12:00–13:00 | 1 | Break | |
+| 13:00–16:00 | 3 | Acme | 86c9abc12 |
+| **Total** | **6h** (+1h break) | | |
 
-*Look at that. Not a single hour unaccounted for. Beautiful.*
-
----
-
-## 🧾 The fine print (read it, because I won't say it twice)
-
-- **Active time** = gaps of 15 minutes or less between session events. Longer than that, you were "thinking."
-- **The day** follows your real active time, rounded to 0.5h, kept between **6h and 8h**. Below 6? Never heard of it.
-- **Every site** gets at least **0.5h**. Billing increments are a time-honored tradition.
-- **Parallel sessions** split the clock between the sites active at that moment. Two sessions on the same client count once. We have *some* principles.
-- **Sites** come from `sites.txt` (`pattern = Site`), matched against folder names **and** prompts. First match wins. Unknown store? You get a `?` and a stern talking-to.
-- **Sessions that start with a timesheet request** don't count. We don't bill clients for *making the timesheet*. That would be unethical.
+*Look at that. Every minute accounted for, and every one of them real. Beautiful.*
 
 ---
 
-## 🗂️ Case files
+## 📋 Putting it on the record (`push`)
 
-| File | Role in the operation |
-|---|---|
-| `extract_sessions.py` | The muscle. Reads `~/.claude/projects/*/*.jsonl` and builds the table. |
-| `sites.txt` | The client list. Copy `sites.example.txt` to start. Git-ignored, because *attorney–client privilege.* |
-| `SKILL.md` | The `/hours` skill. The whole repo *is* the skill, so it lives in `~/.claude/skills/hours`. |
-| `sites.example.txt` | A sample client list. Mostly fictional. |
+This is the only thing we do that writes anywhere, so it's done by code, not by vibes:
+
+1. **Every row needs a client and a task.** A `?` row, an `Unknown` row, or a row with `—` in the task
+   column blocks the push and tells you why. Nothing is filed half-done.
+2. **Every task is looked up first.** Mistype an id and the push stops before a single entry exists.
+3. **Only the difference is filed.** We read what you already logged today and post what's missing per
+   task. Push at noon, push at five, push again by accident — nothing doubles.
+4. One entry per task, starting at its first row, described `hours: <client>`, non-billable unless you
+   say otherwise. Every run, dry or real, goes in `logs/push-<day>.jsonl`. Receipts.
+
+Where does the task come from? Branch name, commit subject, a ClickUp link in a prompt, or the default
+on the client's line in `sites.txt` — in that order. Put the id in your branch name and you'll never
+think about it again.
 
 ---
 
-## ⚠️ Legal disclaimer
+## 🗂️ `sites.txt` — the client list
 
-This is an **estimate** based on Claude Code activity, not a stopwatch. It doesn't see calls, browser QA,
-or time spent staring out the window contemplating your life choices. If a client disputes an invoice,
-run `--all`, look at where every minute went, and **adjust like an honest person would.**
+```
+pattern = Site Name | clickup_task_id    # optional comment
+```
 
-No scheduled jobs, no cron, no hooks. This firm only works when you call.
+A `pattern` is a case-insensitive substring tried against folder names, repository names, window titles
+and prompts. First match wins, so specific lines go above generic ones. Add store domains and admin page
+titles (`acme.com = Acme`) so browser work gets placed. Unknown project folder? We name it after the folder
+(`what-the-pink` → `What The Pink`), append the line, and let you fix the spelling.
+
+---
+
+## ⚠️ The fine print (read it, because I won't say it twice)
+
+- This is an **estimate from evidence**, not a stopwatch. It cannot see the call you took on your phone
+  or the whiteboard session in the kitchen. Add those by hand, like an honest person would.
+- `--all` shows where every minute came from. Read it before you push, and *definitely* before you argue.
+- The pushed entries are **your** statement of your time, the same as if you'd typed them in. We're
+  counsel, not the defendant.
+- Everything runs locally and reads only your own files. Only task, start, duration and
+  `hours: <client>` ever reach ClickUp.
+- No scheduled jobs, no cron, no hooks. This firm only works when you call.
+
+---
+
+## 🧰 Behind the counter
+
+```
+python -m unittest discover -s tests -t .
+```
+
+`hours.py` is the front desk. `timesheet/` is the firm: `config.py`, `sites.py`, `timeline.py` (the grid),
+`allocate.py` (slots and the schedule), `report.py`, `clickup.py` (the API), `push.py` (the paperwork),
+and `sources/` with one file per witness. Adding a witness — a calendar, a ticket system — is one module
+and one line. Fifty-odd tests cover the lot, including a fake ClickUp and a real temporary git repo.
 
 ---
 

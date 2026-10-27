@@ -1,13 +1,40 @@
 ---
 name: hours
-description: Daily timesheet — today's (or a given day's) hours per site from all Claude Code sessions. Use when the user asks for today's hours / time for today's tasks, or runs /hours [YYYY-MM-DD].
+description: Daily timesheet — today's (or a given day's) hours per client from local evidence (ActivityWatch, Claude Code sessions, git commits). Use when the user asks for today's hours / time for today's tasks, or runs /hours [YYYY-MM-DD]. `/hours push [YYYY-MM-DD]` logs the table into ClickUp as time entries; `/hours check` verifies the installation.
 ---
 
-1. Run `extract_sessions.py` from this skill's base directory (shown above) with `$ARGUMENTS`. Use `py -3 -I` on Windows and `python3 -I` on macOS/Linux. The date argument is optional (YYYY-MM-DD). It reads ALL Claude Code sessions of that day across every project folder, not just this conversation.
-   - It ends with a ready-made table from 09:00 with a 1h Break row, in 0.5h steps. The break is placed at the longest real pause (30+ min) between 11:00 and 15:00, or at 12:00 if there was none. The day's total follows real active time, rounded to 0.5h, within 6–8h.
-   - Time is split by active time per site, with at least 0.5h per site, in the order the work started.
-   - A prompt that names a site moves that session's time to the site from then on. The `[Site]` tags in the listing show where this happened.
-   - Prompts are listed only for sessions with an unnamed (`?`) site. If the user questions the split, re-run with `--all` to see every session.
-2. Reply with only that table. Change it only to name the sites marked `?`: name them from the session's prompts listed above the table. A `? one-off:` row is a quick question about another site, so name that site. If the prompt doesn't name a store, write `Other store (question)`; never invent a site from the topic (e.g. "Magento migration" is not a site). Site rules live in `sites.txt` in the skill's base directory. If it doesn't exist, the script uses `sites.example.txt`; offer to create `sites.txt` from it. If you named a site from the prompts and it will come up again, offer to add a line for it to `sites.txt`.
+All commands run from this skill's base directory (shown above) with `py -3 -I hours.py …` on Windows and `python3 -I hours.py …` on macOS/Linux. `$ARGUMENTS` is `[push|check] [YYYY-MM-DD]`; the date defaults to today.
+
+## `/hours [DAY]` — the table
+
+Run `hours.py [DAY]`. It merges ActivityWatch window activity (if running), all Claude Code sessions of the day across every project folder, and the user's git commits, on a one-minute grid, and prints a source summary, the evidence that still needs a client name, and the table. `README.md` here documents the attribution rules if a split needs explaining.
+
+What the output means:
+- The table starts at the configured workday start with one `Break` row, in the configured step (default 15 min). Each client is one row (a client with several tasks has one row per task), split only around the break. The footer states the real tracked time per client and whether day bounds from `config.toml` were applied.
+- `ClickUp task` comes from a task id in the branch name or commit subject, a ClickUp link in a prompt, or the client's default in `sites.txt`; `—` when none.
+- A row starting with `?` is evidence nobody could name: a session started in a container folder (`D:\ERP`) that never names a client, a one-off question, or a repository not in `sites.txt`. The listing shows the prompts or commits behind it.
+- `Unknown` is real active time (usually unmatched window titles) that no client could inherit. Leave it unless the user reassigns it.
+- The ActivityWatch section lists window titles that matched no rule, with minutes. Offer a `sites.txt` pattern for any that clearly belong to a client (a store domain, an admin page title). If ActivityWatch is not reachable, say so in one line under the table and point to the README; never install it yourself unless asked.
+- `--all` lists every session and commit; use it when the user questions the split.
+
+Reply with only the table. Change it only to name `?` rows:
+- Name them from the prompts or commits listed above the table. A `? one-off:` row is a quick question about another client; name that client. If nothing names a client, write `Other client (question)`. Never infer a client from the topic ("Magento migration" is not a client).
+- When a `?` row is named to a client that already has a row, merge them into one row (add the hours, keep the earlier start) and shift the following rows so the table stays contiguous.
+- If the client will come up again, offer to add a rule to `sites.txt`. If `sites.txt` does not exist the script uses `sites.example.txt` and says so; offer to create it.
+
+## `/hours push [DAY]` — write to ClickUp
+
+Only when the user said `push` (or "log it to ClickUp", "push the hours"). Plain `/hours` never writes.
+
+1. Run `hours.py push [DAY] --dry-run`. It prints the table and either the plan (what would be posted per task, what is already logged) or `Push blocked` with the rows to resolve.
+2. If blocked: resolve every reason with the user. A `?` row needs a client (as above; add the rule to `sites.txt` or re-run after the fix). A row without a task needs a task id: ask the user, or look up the client's recent tasks with the ClickUp connector (`clickup_get_time_entries` for the last 14 days) and offer them. Pass the answers as `--assign "Site=taskid"` (one per client) and offer to store them as defaults in `sites.txt`. Repeat the dry run until it is clean.
+3. Show the user the dry-run plan and run `hours.py push [DAY]` with the same `--assign` options. The script validates every task, posts only the difference to what is already logged, and appends to `logs/push-<day>.jsonl`.
+4. Reply with the table and the script's "Posted" section verbatim (task name, start, minutes, entry id, skipped tasks). If the script exits non-zero, show its message and stop; do not retry with different options on your own.
+
+The push needs a ClickUp personal token in `config.toml` (`[clickup] token`) or `CLICKUP_TOKEN`. If it is missing the script says so; tell the user where to put it (README, "ClickUp token"). Never ask the user to paste the token into the chat.
+
+## `/hours check` — verify the installation
+
+Run `hours.py check` and show its output. Every `FAIL` line says what to fix; help the user do it (copy the example files, set `git_roots`, start ActivityWatch, add the token).
 
 Never set this up as a scheduled task, cron or hook.

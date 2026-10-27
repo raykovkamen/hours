@@ -1,2 +1,6 @@
-# real client list, kept private
+# personal files, kept private
 sites.txt
+config.toml
+__pycache__/
+*.pyc
+logs/

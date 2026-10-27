@@ -1,4 +1,13 @@
-# pattern = Site — matched (case-insensitive substring) against a session's project folder AND its prompts.
-# First matching line wins, so put specific patterns (e.g. a client worked on from another folder) above folder names.
-# Copy this file to sites.txt (which stays out of git) and put your real clients there.
+# Client rules: one per line, first match wins. Copy this file to sites.txt (git-ignored).
+#
+#   pattern = Site Name | clickup_task_id    # optional comment
+#
+# pattern  - case-insensitive substring, matched against: project folder names, repository names,
+#            window titles (ActivityWatch) and prompt text (Claude Code). Add store domains and admin
+#            titles here so browser work is placed too, e.g.  acme.com = Acme   or   acme-shop = Acme
+# task id  - optional default ClickUp task for `/hours push` (the id after /t/ in the task URL).
+#            A ClickUp task link pasted into a prompt overrides it for that session.
+# Put specific patterns above generic ones. New project folders are appended here automatically.
 craftberry = Craftberry
+acme = Acme | 86cXXXXXX
+acme.com = Acme

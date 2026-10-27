@@ -1,0 +1,25 @@
+# hours - personal configuration. Copy to config.toml (git-ignored) and adjust.
+
+[workday]
+start = "09:00"          # the table always starts here
+step_minutes = 15        # billing step; every client gets at least one step
+min_hours = 0            # 0 = report tracked time as it is. A value (e.g. 6) pads the reported day up to it.
+max_hours = 0            # 0 = no cap. A value (e.g. 8) caps the reported day.
+break_minutes = 60       # shown as one Break row
+break_window = ["11:00", "15:00"]  # the break goes on the longest real pause (30+ min) in this window...
+break_default = "12:00"            # ...or here when there was none
+
+[sources]
+claude_projects = "~/.claude/projects"
+idle_minutes = 15        # a longer gap inside a Claude session is not active time
+git_roots = []           # folders whose sub-folders are your repositories, e.g. ["D:/PROJECTS", "~/work"]
+git_author = ""          # empty = git config --global user.email
+commit_lead_minutes = 30 # a commit stands for up to this much work before it
+activitywatch_url = "http://localhost:5600"
+carry_minutes = 30       # active minutes nobody placed inherit a client this close in time
+git_task_pattern = '(?:\bCU-|#|\b)([0-9]{2,3}[a-z][a-z0-9]{5,9})\b'  # ClickUp task ids in branch names / commit subjects
+
+[clickup]
+token = ""               # personal API token (ClickUp > Settings > Apps), or set CLICKUP_TOKEN in the environment
+team_id = ""             # optional when the token sees exactly one workspace
+billable = false         # mark pushed entries billable
