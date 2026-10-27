@@ -91,20 +91,6 @@ class ClickUp:
         return Task(t["id"], t.get("name", ""), status.get("status", ""),
                     (t.get("list") or {}).get("name", ""), (t.get("folder") or {}).get("name", ""))
 
-    def find_task(self, list_id: str, name: str, created_after: datetime, marker: str = "") -> Task | None:
-        """The day's own task in the list: the one whose description carries `marker` (the title may have been
-        edited), or else exactly this name. Only tasks created after `created_after` are considered."""
-        page = 0
-        while True:
-            data = self._call("GET", f"list/{list_id}/task", {"date_created_gt": to_ms(created_after),
-                                                             "include_closed": "true", "subtasks": "true", "page": page})
-            for t in data.get("tasks", []):
-                if (marker and marker in (t.get("description") or t.get("text_content") or "")) or t.get("name") == name:
-                    return self.task(t["id"])
-            if data.get("last_page", True) or not data.get("tasks"):
-                return None
-            page += 1
-
     def create_task(self, list_id: str, name: str, status: str, assignee_id: int | None, description: str = "") -> Task:
         """Create a task; when the list has no such status, it is created with the list's default status."""
         body: dict = {"name": name}

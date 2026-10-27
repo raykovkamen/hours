@@ -16,7 +16,7 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass, field
-from datetime import date, datetime, time
+from datetime import date, datetime
 from pathlib import Path
 
 from .allocate import BREAK, Row
@@ -38,7 +38,7 @@ class Action:
     entry_id: str = ""
     list_id: str = ""  # create mode
     task_name: str = ""  # create mode
-    description: str = ""  # create mode: task description (work done + lookup marker)
+    description: str = ""  # create mode: task description (summary + commits)
     created: bool = False  # create mode: the task was created by this run (or would be, in a dry run)
 
     @property
@@ -63,9 +63,20 @@ class Plan:
         return [a for a in self.actions if not a.skipped]
 
 
-def marker(site: str, day: date) -> str:
-    """Hidden key in the daily task's description, so a repeated push finds it even after a rename."""
-    return f"hours-key: {site} | {day.isoformat()}"
+def known_task(log_dir: Path, site: str, day: date) -> str:
+    """The daily task an earlier real push created for this client and day, from the local push log."""
+    log = log_dir / f"push-{day.isoformat()}.jsonl"
+    if not log.exists():
+        return ""
+    found = ""
+    for line in log.read_text(encoding="utf-8").splitlines():
+        try:
+            rec = json.loads(line)
+        except ValueError:
+            continue
+        if rec.get("mode") == "create" and not rec.get("dry_run") and rec.get("site") == site and rec.get("task"):
+            found = rec["task"]
+    return found
 
 
 def auto_title(evidence: list[tuple[datetime, str, str]], limit: int = 70) -> str:
@@ -77,21 +88,17 @@ def auto_title(evidence: list[tuple[datetime, str, str]], limit: int = 70) -> st
     return f"{title} (+{len(commits) - 1} more)" if len(commits) > 1 else title
 
 
-def describe(site: str, day: date, evidence: list[tuple[datetime, str, str]], summary: str = "") -> str:
-    """Task description: optional summary, the day's commits (never prompts - they can hold client material)."""
+def describe(evidence: list[tuple[datetime, str, str]], summary: str = "") -> str:
+    """Task description: the summary, then the day's commits. Never prompts - they can hold client material."""
     commits = [(t, text) for t, kind, text in evidence if kind == "commit" and not text.lower().startswith("merge ")]
-    out = [summary.strip(), ""] if summary.strip() else []
+    out = [summary.strip()] if summary.strip() else []
     if commits:
-        out.append("**Commits**")
-        out += [f"- {t:%H:%M} {text}" for t, text in commits[:20]]
-        out.append("")
-    out.append(f"_Logged by hours on {day.isoformat()}._")
-    out.append(f"`{marker(site, day)}`")
+        out += (["", "**Commits**"] if out else ["**Commits**"]) + [f"- {t:%H:%M} {text}" for t, text in commits[:20]]
     return "\n".join(out)
 
 
 def plan(day: date, rows: list[Row], sites: Sites, logged: list[Entry], assign: dict[str, str],
-         mode: str = "existing", default_list: str = "", task_name: str = "{site} – {title}",
+         mode: str = "existing", default_list: str = "", task_name: str = "{title}",
          titles: dict[str, str] | None = None, evidence=None, summaries: dict[str, str] | None = None) -> Plan:
     """Decide what to post. `assign` maps a site to a task id (existing mode) or `list:ID` (create mode).
 
@@ -138,16 +145,23 @@ def plan(day: date, rows: list[Row], sites: Sites, logged: list[Entry], assign: 
             title = titles.get(key) or auto_title(ev) or day.isoformat()
             name = task_name.format(site=key, date=day.isoformat(), title=title)
             p.actions.append(Action("", key, start, minutes, minutes, 0, list_id=extra, task_name=name,
-                                    description=describe(key, day, ev, summaries.get(key, ""))))
+                                    description=describe(ev, summaries.get(key, ""))))
         else:
             already = int(round(p.logged_by_task.get(key, 0)))
             p.actions.append(Action(key, extra, start, minutes - already, minutes, already))
     return p
 
 
-def _resolve_daily_task(p: Plan, a: Action, api: ClickUp, status: str, me: int | None, dry_run: bool) -> None:
-    day_start = datetime.combine(p.day, time.min).astimezone()
-    found = api.find_task(a.list_id, a.task_name, day_start, marker(a.site, p.day))
+def _resolve_daily_task(p: Plan, a: Action, api: ClickUp, status: str, me: int | None, dry_run: bool,
+                        log_dir: Path) -> None:
+    """Reuse the task an earlier push created today (if it still exists in ClickUp), else create one."""
+    found = None
+    tid = known_task(log_dir, a.site, p.day)
+    if tid:
+        try:
+            found = api.task(tid)
+        except ClickUpError:
+            found = None  # deleted in ClickUp since: open a new one
     if found:
         a.task, a.task_id = found, found.id
         a.logged_minutes = int(round(p.logged_by_task.get(found.id, 0)))
@@ -167,7 +181,7 @@ def execute(p: Plan, api: ClickUp, billable: bool, dry_run: bool, log_dir: Path,
         me = api.user().get("id")
         for a in p.actions:
             try:
-                _resolve_daily_task(p, a, api, status, me, dry_run)
+                _resolve_daily_task(p, a, api, status, me, dry_run, log_dir)
             except ClickUpError as e:
                 p.blocked.append(f"{a.site}: list {a.list_id} - {e}")
     else:

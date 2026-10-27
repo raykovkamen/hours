@@ -1,3 +1,4 @@
+import json
 import tempfile
 import unittest
 from datetime import date, datetime, timedelta, timezone
@@ -127,16 +128,10 @@ class CreateApi(FakeApi):
     def user(self):
         return {"id": 42}
 
-    def find_task(self, list_id, name, created_after, marker=""):
+    def create_task(self, list_id, name, status, assignee_id, description=""):
         if list_id in self.bad_lists:
             from timesheet.clickup import ClickUpError
             raise ClickUpError("HTTP 404 list not found")
-        for (lst, key), tid in self.existing.items():
-            if lst == list_id and (key == name or (marker and key == marker)):
-                return Task(tid, name, "in progress", "DEV", "Client")
-        return None
-
-    def create_task(self, list_id, name, status, assignee_id, description=""):
         tid = f"new{len(self.created) + 1}"
         self.created.append((list_id, name, status, assignee_id))
         self.descriptions = getattr(self, "descriptions", []) + [description]
@@ -154,6 +149,12 @@ class CreateModeTest(unittest.TestCase):
 
     def tearDown(self):
         self.dir.cleanup()
+
+    def remember(self, site, task_id):
+        """Simulate an earlier real push that created `task_id` for `site` today."""
+        self.logs.mkdir(exist_ok=True)
+        with open(self.logs / "push-2026-10-27.jsonl", "a", encoding="utf-8") as f:
+            f.write(json.dumps({"mode": "create", "dry_run": False, "site": site, "task": task_id}) + "\n")
 
     def plan(self, rows, logged=(), assign=None, default_list="", name="{site} – {date}", titles=None, evidence=None):
         return push.plan(DAY, rows, self.sites, list(logged), assign or {}, "create", default_list, name,
@@ -183,7 +184,8 @@ class CreateModeTest(unittest.TestCase):
         self.assertIn("Created 1 task", push.render(p, dry_run=False))
 
     def test_second_push_finds_the_task_and_adds_only_the_difference(self):
-        api = CreateApi(existing={("L1", "Acme – 2026-10-27"): "D1"})
+        api = CreateApi()
+        self.remember("Acme", "D1")
         logged = [Entry("e1", "D1", "Acme – 2026-10-27", at(9, 0), 60, "hours: Acme")]
         p = self.plan([row(9, 0, 10, 30, "Acme")], logged)
         push.execute(p, api, billable=False, dry_run=False, log_dir=self.logs)
@@ -202,27 +204,42 @@ class CreateModeTest(unittest.TestCase):
     def test_title_from_commits_or_override_and_description_without_prompts(self):
         ev = {"Acme": [(at(9, 10), "prompt", "secret client text"), (at(9, 20), "commit", "Merge branch main"),
                        (at(9, 30), "commit", "Fix VAT field in checkout"), (at(10, 0), "commit", "Add tests")]}
-        p = self.plan([row(9, 0, 10, 0, "Acme")], name="{site} – {title}", evidence=lambda s: ev.get(s, []))
+        p = self.plan([row(9, 0, 10, 0, "Acme")], name="{title}", evidence=lambda s: ev.get(s, []))
         a = p.actions[0]
-        self.assertEqual(a.task_name, "Acme – Fix VAT field in checkout (+1 more)")
-        self.assertIn("- 09:30 Fix VAT field in checkout", a.description)
-        self.assertNotIn("secret client text", a.description)
-        self.assertNotIn("Merge branch", a.description)
-        self.assertIn(push.marker("Acme", DAY), a.description)
-        p = self.plan([row(9, 0, 10, 0, "Acme")], name="{site} – {title}", titles={"Acme": "Checkout VAT fixes"},
-                      evidence=lambda s: ev.get(s, []))
-        self.assertEqual(p.actions[0].task_name, "Acme – Checkout VAT fixes")
+        self.assertEqual(a.task_name, "Fix VAT field in checkout (+1 more)")
+        self.assertEqual(a.description, "**Commits**\n- 09:30 Fix VAT field in checkout\n- 10:00 Add tests")
+        p = push.plan(DAY, [row(9, 0, 10, 0, "Acme")], self.sites, [], {}, "create", "", "{title}",
+                      {"Acme": "Checkout VAT fixes"}, lambda s: ev.get(s, []), {"Acme": "Fixed the VAT field."})
+        self.assertEqual(p.actions[0].task_name, "Checkout VAT fixes")
+        self.assertEqual(p.actions[0].description.splitlines()[:3], ["Fixed the VAT field.", "", "**Commits**"])
+        self.assertNotIn("hours", p.actions[0].description)
 
     def test_title_falls_back_to_the_date_without_commits(self):
-        p = self.plan([row(9, 0, 10, 0, "Acme")], name="{site} – {title}")
-        self.assertEqual(p.actions[0].task_name, "Acme – 2026-10-27")
+        p = self.plan([row(9, 0, 10, 0, "Acme")], name="{title}")
+        self.assertEqual(p.actions[0].task_name, "2026-10-27")
+        self.assertEqual(p.actions[0].description, "")
 
-    def test_renamed_daily_task_is_found_by_its_marker(self):
-        api = CreateApi(existing={("L1", push.marker("Acme", DAY)): "D1"})
-        p = self.plan([row(9, 0, 10, 0, "Acme")], name="{site} – {title}", titles={"Acme": "A new title"})
+    def test_renamed_daily_task_is_found_through_the_push_log(self):
+        api = CreateApi()
+        self.remember("Acme", "D1")
+        p = self.plan([row(9, 0, 10, 0, "Acme")], name="{title}", titles={"Acme": "A new title"})
         push.execute(p, api, billable=False, dry_run=False, log_dir=self.logs)
         self.assertEqual(api.created, [])
         self.assertEqual(api.posted[0][0], "D1")
+
+    def test_task_deleted_in_clickup_is_created_again(self):
+        api = CreateApi()
+        api.fail = {"GONE"}
+        self.remember("Acme", "GONE")
+        p = self.plan([row(9, 0, 10, 0, "Acme")])
+        push.execute(p, api, billable=False, dry_run=False, log_dir=self.logs)
+        self.assertEqual(len(api.created), 1)
+        self.assertEqual(api.posted[0][0], "new1")
+
+    def test_dry_runs_in_the_log_are_not_mistaken_for_created_tasks(self):
+        self.logs.mkdir()
+        (self.logs / "push-2026-10-27.jsonl").write_text(json.dumps({"mode": "create", "dry_run": True, "site": "Acme", "task": "X"}) + "\n")
+        self.assertEqual(push.known_task(self.logs, "Acme", DAY), "")
 
     def test_bad_list_blocks_before_anything_is_written(self):
         api = CreateApi(bad_lists={"L1"})
