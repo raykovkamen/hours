@@ -64,6 +64,12 @@ def cmd_push(args, cfg, sites) -> int:
     tl, reports, rows, slots = build(cfg, sites, args.day)
     print(report.table(rows, sites, tl, cfg, slots))
     print()
+    if args.only:
+        wanted = {s.strip().lower() for s in args.only}
+        rows = [r for r in rows if r.key == allocate.BREAK or sites.split_key(r.key)[0].lower() in wanted]
+        if not any(r.key != allocate.BREAK for r in rows):
+            print(f"--only matched no row: {', '.join(args.only)}")
+            return 2
     try:
         api = ClickUp(push.token_from(cfg.clickup.token), cfg.clickup.team_id)
         tz = datetime.now().astimezone().tzinfo
@@ -127,6 +133,7 @@ def main(argv: list[str] | None = None) -> int:
         ap.add_argument("--dry-run", action="store_true", help="show what would be posted, write nothing")
         ap.add_argument("--assign", action="append", metavar="SITE=TASK", help="task for a client, this push only")
         ap.add_argument("--billable", action="store_true", help="mark the entries billable")
+        ap.add_argument("--only", action="append", metavar="SITE", help="push only this client's rows (repeatable)")
     args = ap.parse_args(argv)
 
     if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":

@@ -117,7 +117,7 @@ Or, if you prefer to do things yourself (respect):
 
 ```
 hours.py [DAY] [--all] [--json]
-hours.py push [DAY] [--dry-run] [--assign "Site=taskid"]
+hours.py push [DAY] [--dry-run] [--assign "Site=taskid"] [--only Site]
 hours.py check
 ```
 
