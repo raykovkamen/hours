@@ -26,6 +26,8 @@ Reply with only the table. Change it only to name `?` rows:
 
 Only when the user said `push` (or "log it to ClickUp", "push the hours"). Plain `/hours` never writes.
 
+In `create` mode (`[clickup] mode = "create"` in config.toml, or `--create`) the push makes one new "in progress" task per client per day in the client's list (`list:<id>` in sites.txt) and logs the time there, instead of using existing tasks; a row is then blocked only when its client has no list. Use `--create` only when the user asks for new tasks or the config already says so.
+
 1. Run `hours.py push [DAY] --dry-run`. It prints the table and either the plan (what would be posted per task, what is already logged) or `Push blocked` with the rows to resolve.
 2. If blocked: resolve every reason with the user. A `?` row needs a client (as above; add the rule to `sites.txt` or re-run after the fix). A row without a task needs a task id: ask the user, or look up the client's recent tasks with the ClickUp connector (`clickup_get_time_entries` for the last 14 days) and offer them. Pass the answers as `--assign "Site=taskid"` (one per client) and offer to store them as defaults in `sites.txt`. Repeat the dry run until it is clean.
 3. Show the user the dry-run plan and run `hours.py push [DAY]` with the same `--assign` options. The script validates every task, posts only the difference to what is already logged, and appends to `logs/push-<day>.jsonl`.

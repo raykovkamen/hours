@@ -115,5 +115,93 @@ class ExecuteTest(unittest.TestCase):
         self.assertIn("Push blocked", push.render(p, dry_run=False))
 
 
+class CreateApi(FakeApi):
+    """Fake API with lists: find_task / create_task / user."""
+
+    def __init__(self, existing=None, bad_lists=()):
+        super().__init__()
+        self.existing = existing or {}  # (list_id, name) -> task id
+        self.bad_lists = set(bad_lists)
+        self.created = []
+
+    def user(self):
+        return {"id": 42}
+
+    def find_task(self, list_id, name, created_after):
+        if list_id in self.bad_lists:
+            from timesheet.clickup import ClickUpError
+            raise ClickUpError("HTTP 404 list not found")
+        tid = self.existing.get((list_id, name))
+        return Task(tid, name, "in progress", "DEV", "Client") if tid else None
+
+    def create_task(self, list_id, name, status, assignee_id):
+        tid = f"new{len(self.created) + 1}"
+        self.created.append((list_id, name, status, assignee_id))
+        self.existing[(list_id, name)] = tid
+        return Task(tid, name, status, "DEV", "Client")
+
+
+class CreateModeTest(unittest.TestCase):
+    def setUp(self):
+        self.dir = tempfile.TemporaryDirectory()
+        p = Path(self.dir.name) / "sites.txt"
+        p.write_text("acme = Acme | T1 list:L1\nzeta = Zeta\n", encoding="utf-8")
+        self.sites = Sites(p)
+        self.logs = Path(self.dir.name) / "logs"
+
+    def tearDown(self):
+        self.dir.cleanup()
+
+    def plan(self, rows, logged=(), assign=None, default_list=""):
+        return push.plan(DAY, rows, self.sites, list(logged), assign or {}, "create", default_list, "{site} – {date}")
+
+    def test_list_from_sites_txt_and_default_list(self):
+        self.assertEqual(self.sites.lists, {"Acme": "L1"})
+        self.assertEqual(self.sites.tasks, {"Acme": "T1"})
+        p = self.plan([row(9, 0, 10, 0, "Acme"), row(10, 0, 10, 30, "Zeta")], default_list="L0")
+        self.assertTrue(p.ok)
+        by = {a.site: a for a in p.actions}
+        self.assertEqual((by["Acme"].list_id, by["Acme"].task_name), ("L1", "Acme – 2026-10-27"))
+        self.assertEqual(by["Zeta"].list_id, "L0")
+
+    def test_client_without_list_blocks(self):
+        p = self.plan([row(9, 0, 10, 0, "Zeta")])
+        self.assertFalse(p.ok)
+        self.assertIn("no ClickUp list", p.blocked[0])
+        self.assertTrue(self.plan([row(9, 0, 10, 0, "Zeta")], assign={"Zeta": "list:L9"}).ok)
+
+    def test_creates_in_progress_task_assigned_to_me_and_logs_time(self):
+        api = CreateApi()
+        p = self.plan([row(9, 0, 10, 0, "Acme"), row(13, 0, 13, 30, "Acme")])
+        push.execute(p, api, billable=False, dry_run=False, log_dir=self.logs, status="in progress")
+        self.assertEqual(api.created, [("L1", "Acme – 2026-10-27", "in progress", 42)])
+        self.assertEqual(api.posted, [("new1", at(9, 0), 90, "hours: Acme", False)])
+        self.assertIn("Created 1 task", push.render(p, dry_run=False))
+
+    def test_second_push_finds_the_task_and_adds_only_the_difference(self):
+        api = CreateApi(existing={("L1", "Acme – 2026-10-27"): "D1"})
+        logged = [Entry("e1", "D1", "Acme – 2026-10-27", at(9, 0), 60, "hours: Acme")]
+        p = self.plan([row(9, 0, 10, 30, "Acme")], logged)
+        push.execute(p, api, billable=False, dry_run=False, log_dir=self.logs)
+        self.assertEqual(api.created, [])
+        self.assertEqual(api.posted, [("D1", at(9, 0), 30, "hours: Acme", False)])
+
+    def test_dry_run_creates_nothing(self):
+        api = CreateApi()
+        p = self.plan([row(9, 0, 10, 0, "Acme")])
+        push.execute(p, api, billable=False, dry_run=True, log_dir=self.logs)
+        self.assertEqual((api.created, api.posted), ([], []))
+        out = push.render(p, dry_run=True)
+        self.assertIn("Would create 1 task", out)
+        self.assertIn("new task in list L1", out)
+
+    def test_bad_list_blocks_before_anything_is_written(self):
+        api = CreateApi(bad_lists={"L1"})
+        p = self.plan([row(9, 0, 10, 0, "Acme")])
+        push.execute(p, api, billable=False, dry_run=False, log_dir=self.logs)
+        self.assertFalse(p.ok)
+        self.assertEqual((api.created, api.posted), ([], []))
+
+
 if __name__ == "__main__":
     unittest.main()

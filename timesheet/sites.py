@@ -39,6 +39,7 @@ class Sites:
         self.path = path
         self.rules: list[tuple[str, str]] = []
         self.tasks: dict[str, str] = {}
+        self.lists: dict[str, str] = {}  # site -> ClickUp list id where daily tasks are created (create mode)
         source = path if path.exists() else example
         self.using_example = source is not None and source != path
         if source and source.exists():
@@ -49,12 +50,15 @@ class Sites:
             if "=" not in line or line.lstrip().startswith("#"):
                 continue
             pattern, rest = line.split("=", 1)
-            site, _, task = rest.split("#", 1)[0].partition("|")
-            pattern, site, task = pattern.strip().lower(), site.strip(), task.strip()
+            site, _, refs = rest.split("#", 1)[0].partition("|")
+            pattern, site = pattern.strip().lower(), site.strip()
             if pattern and site:
                 self.rules.append((pattern, site))
-                if task:
-                    self.tasks.setdefault(site, task)
+                for ref in refs.split():  # "86cabc123" (default task) and/or "list:901524027003"
+                    if ref.lower().startswith("list:"):
+                        self.lists.setdefault(site, ref[5:])
+                    else:
+                        self.tasks.setdefault(site, ref)
 
     def match(self, text: str) -> str | None:
         text = text.lower()

@@ -24,3 +24,8 @@ git_task_pattern = '(?:\bCU-|#|\b)([0-9]{2,3}[a-z][a-z0-9]{5,9})\b'  # ClickUp t
 token = ""               # personal API token (ClickUp > Settings > Apps), or set CLICKUP_TOKEN in the environment
 team_id = ""             # optional when the token sees exactly one workspace
 billable = false         # mark pushed entries billable
+mode = "existing"       # "existing": log on the task from branch/commit/prompt/sites.txt
+                        # "create":   one new "in progress" task per client per day, time logged there
+list_id = ""            # create mode: list for clients without list:<id> in sites.txt
+task_status = "in progress"
+task_name = "{site} – {date}"

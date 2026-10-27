@@ -6,8 +6,9 @@
 #            window titles (ActivityWatch) and prompt text (Claude Code). Add store domains and admin
 #            titles here so browser work is placed too, e.g.  acme.com = Acme   or   acme-shop = Acme
 # task id  - optional default ClickUp task for `/hours push` (the id after /t/ in the task URL).
+# list:ID  - optional list where `push --create` opens the client's daily task (the number in the list URL).
 #            A ClickUp task link pasted into a prompt overrides it for that session.
 # Put specific patterns above generic ones. New project folders are appended here automatically.
 craftberry = Craftberry
-acme = Acme | 86cXXXXXX
+acme = Acme | 86cXXXXXX list:901500000000
 acme.com = Acme

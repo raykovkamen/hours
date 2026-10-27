@@ -46,6 +46,10 @@ class ClickUpConfig:
     token: str = ""  # or CLICKUP_TOKEN in the environment
     team_id: str = ""  # optional when the token sees exactly one workspace
     billable: bool = False
+    mode: str = "existing"  # "existing": log on the task from branch/prompt/sites.txt; "create": one new task per client per day
+    list_id: str = ""  # create mode: list for clients without their own `list:ID` in sites.txt
+    task_status: str = "in progress"  # create mode: status of the new task (falls back to the list default)
+    task_name: str = "{site} – {date}"  # create mode: name of the daily task
 
 
 @dataclass(frozen=True)
@@ -93,7 +97,11 @@ def load(path: Path | None = None) -> Config:
     )
     c = raw.get("clickup", {})
     clickup = ClickUpConfig(token=str(c.get("token", "")), team_id=str(c.get("team_id", "")),
-                            billable=bool(c.get("billable", False)))
+                            billable=bool(c.get("billable", False)), mode=str(c.get("mode", "existing")),
+                            list_id=str(c.get("list_id", "")), task_status=str(c.get("task_status", "in progress")),
+                            task_name=str(c.get("task_name", ClickUpConfig.task_name)))
+    if clickup.mode not in ("existing", "create"):
+        sys.exit(f'config: [clickup] mode must be "existing" or "create" (got {clickup.mode!r})')
     if workday.step_minutes <= 0 or 60 % workday.step_minutes:
         sys.exit(f"config: step_minutes must divide 60 (got {workday.step_minutes})")
     if workday.max_hours and workday.max_hours < workday.min_hours:

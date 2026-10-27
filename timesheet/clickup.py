@@ -91,6 +91,32 @@ class ClickUp:
         return Task(t["id"], t.get("name", ""), status.get("status", ""),
                     (t.get("list") or {}).get("name", ""), (t.get("folder") or {}).get("name", ""))
 
+    def find_task(self, list_id: str, name: str, created_after: datetime) -> Task | None:
+        """A task in the list with exactly this name, created after the given time (the day's own task)."""
+        page = 0
+        while True:
+            data = self._call("GET", f"list/{list_id}/task", {"date_created_gt": to_ms(created_after),
+                                                             "include_closed": "true", "subtasks": "true", "page": page})
+            for t in data.get("tasks", []):
+                if t.get("name") == name:
+                    return self.task(t["id"])
+            if data.get("last_page", True) or not data.get("tasks"):
+                return None
+            page += 1
+
+    def create_task(self, list_id: str, name: str, status: str, assignee_id: int | None) -> Task:
+        """Create a task; when the list has no such status, it is created with the list's default status."""
+        body: dict = {"name": name}
+        if assignee_id:
+            body["assignees"] = [assignee_id]
+        try:
+            t = self._call("POST", f"list/{list_id}/task", body={**body, "status": status} if status else body)
+        except ClickUpError as e:
+            if not status or "status" not in str(e).lower():
+                raise
+            t = self._call("POST", f"list/{list_id}/task", body=body)
+        return self.task(t["id"])
+
     # -- time entries --------------------------------------------------------------
     def entries(self, day_start: datetime, day_end: datetime) -> list[Entry]:
         """The authenticated user's entries starting within [day_start, day_end)."""

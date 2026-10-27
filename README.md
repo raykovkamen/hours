@@ -117,7 +117,7 @@ Or, if you prefer to do things yourself (respect):
 
 ```
 hours.py [DAY] [--all] [--json]
-hours.py push [DAY] [--dry-run] [--assign "Site=taskid"] [--only Site]
+hours.py push [DAY] [--dry-run] [--assign "Site=taskid"] [--only Site] [--create]
 hours.py check
 ```
 
@@ -148,6 +148,12 @@ This is the only thing we do that writes anywhere, so it's done by code, not by 
 4. One entry per task, starting at its first row, described `hours: <client>`, non-billable unless you
    say otherwise. Every run, dry or real, goes in `logs/push-<day>.jsonl`. Receipts.
 
+**Or let us open a fresh file.** With `[clickup] mode = "create"` (or `push --create`) we don't touch
+existing tasks at all: each client gets one new task per day — `Acme – 2026-10-27`, status *in progress*,
+assigned to you — in the client's list, and the day's time goes there. Push again later and we find
+that task instead of opening a second one. The list comes from `list:<id>` on the client's line in
+`sites.txt` (the number in the list's URL), or `[clickup] list_id` as the catch-all.
+
 Where does the task come from? Branch name, commit subject, a ClickUp link in a prompt, or the default
 on the client's line in `sites.txt` — in that order. Put the id in your branch name and you'll never
 think about it again.
@@ -157,7 +163,7 @@ think about it again.
 ## 🗂️ `sites.txt` — the client list
 
 ```
-pattern = Site Name | clickup_task_id    # optional comment
+pattern = Site Name | clickup_task_id list:clickup_list_id    # both optional
 ```
 
 A `pattern` is a case-insensitive substring tried against folder names, repository names, window titles

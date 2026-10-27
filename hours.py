@@ -75,8 +75,9 @@ def cmd_push(args, cfg, sites) -> int:
         tz = datetime.now().astimezone().tzinfo
         day_start = datetime.combine(args.day, datetime.min.time()).replace(tzinfo=tz)
         logged = api.entries(day_start, day_start + timedelta(days=1))
-        p = push.plan(args.day, rows, sites, logged, assign)
-        push.execute(p, api, args.billable or cfg.clickup.billable, args.dry_run, cfg.log_dir)
+        mode = "create" if args.create else cfg.clickup.mode
+        p = push.plan(args.day, rows, sites, logged, assign, mode, cfg.clickup.list_id, cfg.clickup.task_name)
+        push.execute(p, api, args.billable or cfg.clickup.billable, args.dry_run, cfg.log_dir, cfg.clickup.task_status)
     except ClickUpError as e:
         print(f"Push failed: {e}")
         return 2
@@ -134,6 +135,8 @@ def main(argv: list[str] | None = None) -> int:
         ap.add_argument("--assign", action="append", metavar="SITE=TASK", help="task for a client, this push only")
         ap.add_argument("--billable", action="store_true", help="mark the entries billable")
         ap.add_argument("--only", action="append", metavar="SITE", help="push only this client's rows (repeatable)")
+        ap.add_argument("--create", action="store_true", help="create one 'in progress' task per client for the day "
+                        "and log the time there (same as [clickup] mode = \"create\")")
     args = ap.parse_args(argv)
 
     if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
