@@ -31,13 +31,14 @@ def day_slots(active_minutes: int, workday: Workday) -> int:
     return slots
 
 
-def allocate(per_key: dict[str, tuple[int, float]], slots: int) -> list[tuple[str, int]]:
+def allocate(per_key: dict[str, tuple[int, float]], slots: int, min_minutes: float = 1) -> list[tuple[str, int]]:
     """Share `slots` between row keys by their minutes (largest remainder), one slot minimum each.
 
-    Keys are ordered by when work on them started. A key needs at least one real minute.
+    Keys are ordered by when work on them started. A key needs at least `min_minutes` of real time;
+    below that it is a passing question, not billable work, and its minutes are absorbed by the others.
     Returns [(key, slots)]; keys that do not fit (more keys than slots) are dropped from the end.
     """
-    order = sorted((k for k, (_, mins) in per_key.items() if mins >= 1), key=lambda k: per_key[k][0])[:max(slots, 0)]
+    order = sorted((k for k, (_, mins) in per_key.items() if mins >= max(min_minutes, 1)), key=lambda k: per_key[k][0])[:max(slots, 0)]
     if not order:
         return []
     units = {k: 1 for k in order}

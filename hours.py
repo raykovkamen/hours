@@ -35,7 +35,7 @@ def build(cfg: config.Config, sites: Sites, day: date):
     reports = [src.collect(cfg, sites, tl) for src in (activitywatch, claude_sessions, git_commits)]
     tl.resolve_unplaced(cfg.sources.carry_minutes)
     slots = allocate.day_slots(tl.active_minutes(), cfg.workday)
-    allocation = allocate.allocate(tl.per_key(), slots)
+    allocation = allocate.allocate(tl.per_key(), slots, cfg.workday.min_client_minutes)
     pause = tl.longest_pause(cfg.workday.break_window, min_minutes=30)
     rows = allocate.schedule(day, allocation, cfg.workday, allocate.break_time(pause, cfg.workday))
     return tl, reports, rows, slots

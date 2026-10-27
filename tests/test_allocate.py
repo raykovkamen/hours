@@ -36,6 +36,11 @@ class AllocateTest(unittest.TestCase):
         per = {"A": (0, 60.0), "Noise": (5, 0.5)}
         self.assertEqual(allocate(per, 4), [("A", 4)])
 
+    def test_clients_under_the_threshold_are_passing_questions(self):
+        per = {"A": (0, 60.0), "Quick": (5, 3.0), "Real": (9, 12.0)}
+        self.assertEqual(allocate(per, 5, min_minutes=5), [("A", 4), ("Real", 1)])
+        self.assertEqual([k for k, _ in allocate(per, 5, min_minutes=1)], ["A", "Quick", "Real"])
+
     def test_more_clients_than_slots_keeps_the_earliest(self):
         per = {"A": (0, 5.0), "B": (1, 5.0), "C": (2, 5.0)}
         self.assertEqual(allocate(per, 2), [("A", 1), ("B", 1)])

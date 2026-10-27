@@ -51,6 +51,10 @@ def table(rows: list[Row], sites: Sites, tl: Timeline, cfg: Config, slots: int) 
     out.append("")
     out.append(f"(tracked active time {hours(tl.active_minutes())}h: {real}; {w.step_minutes}-min steps{bounds})")
     notes = []
+    in_table = {r.key for r in rows}
+    passing = [f"{sites.split_key(k)[0]} {int(round(v[1]))} min" for k, v in per_key.items() if k not in in_table and v[1] >= 1]
+    if passing:
+        notes.append(f"under {w.min_client_minutes} min, not billed as a row: " + ", ".join(passing))
     if any(is_unnamed(r.key) for r in rows):
         notes.append("rows starting with ? need a client name - see the listing above")
     if sites.using_example:

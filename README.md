@@ -43,8 +43,9 @@ They testify onto a one-minute grid. Then:
 
 ## 🧾 What you'll be billed
 
-- **Tracked time, rounded to 15 minutes.** Every client gets at least one step — a one-minute question
-  is a fifteen-minute consultation, my friend. Ask any lawyer.
+- **Tracked time, rounded to 15 minutes.** Every client on the table gets at least one step. But a client
+  with under 5 real minutes (`min_client_minutes`) is a passing question, not a consultation — it's noted
+  under the table and its minutes are absorbed by the clients you actually worked for. We have *some* principles.
 - **A 1h break**, placed on your longest real pause between 11:00 and 15:00. Took two hours? We only need
   to know about one of them.
 - **Nothing padded, nothing capped — by default.** `min_hours` and `max_hours` in `config.toml` can bound

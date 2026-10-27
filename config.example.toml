@@ -8,6 +8,7 @@ max_hours = 0            # 0 = no cap. A value (e.g. 8) caps the reported day.
 break_minutes = 60       # shown as one Break row
 break_window = ["11:00", "15:00"]  # the break goes on the longest real pause (30+ min) in this window...
 break_default = "12:00"            # ...or here when there was none
+min_client_minutes = 5   # a client with less real time than this is a passing question, not a row
 
 [sources]
 claude_projects = "~/.claude/projects"
