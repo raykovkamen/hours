@@ -73,5 +73,30 @@ class BreakTimeTest(unittest.TestCase):
         self.assertEqual(break_time((14 * 60 + 50, 30), Workday()), time(14, 0))
 
 
+
+class TableColumnTest(unittest.TestCase):
+    def test_task_column_only_outside_create_mode(self):
+        import tempfile
+        from datetime import datetime, timezone
+        from pathlib import Path
+        from timesheet import report
+        from timesheet.allocate import Row
+        from timesheet.config import ClickUpConfig, Config
+        from timesheet.sites import Sites
+        from timesheet.timeline import Timeline
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "sites.txt"
+            p.write_text("acme = Acme | T1\n", encoding="utf-8")
+            sites, tz = Sites(p), timezone.utc
+            rows = [Row(datetime(2026, 10, 27, 9, tzinfo=tz), datetime(2026, 10, 27, 10, tzinfo=tz), "Acme")]
+            tl = Timeline(DAY, tz)
+            existing = report.table(rows, sites, tl, Config(), 4)
+            created = report.table(rows, sites, tl, Config(clickup=ClickUpConfig(mode="create")), 4)
+            self.assertIn("| ClickUp task |", existing)
+            self.assertIn("| Acme | T1 |", existing)
+            self.assertNotIn("ClickUp task", created)
+            self.assertIn("| 09:00–10:00 | 1 | Acme |", created)
+
+
 if __name__ == "__main__":
     unittest.main()

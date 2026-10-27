@@ -11,10 +11,10 @@ Run `hours.py [DAY]`. It merges, on a one-minute grid: ActivityWatch (window in 
 
 What the output means:
 - The table starts at the configured workday start with one `Break` row, in the configured step (default 15 min). Each client is one row (a client with several tasks has one row per task), split only around the break. The footer states the real tracked time per client and whether day bounds from `config.toml` were applied.
-- `ClickUp task` comes from a task id in the branch name or commit subject, a ClickUp link in a prompt, or the client's default in `sites.txt`; `—` when none.
+- `ClickUp task` (only in `existing` mode; in `create` mode the column is left out because the push creates the tasks) comes from a task id in the branch name or commit subject, a ClickUp link in a prompt, or the client's default in `sites.txt`; `—` when none.
 - A row starting with `?` is evidence nobody could name: a session started in a container folder (`D:\ERP`) that never names a client, a one-off question, a repository not in `sites.txt`, a `? meeting:` whose title names no client, or a `? note:`. The listing shows what is behind it.
 - `Unknown` is real active time (usually unmatched windows) that no client could inherit. Leave it unless the user reassigns it.
-- The ActivityWatch section lists window titles, URLs (host and path) and VS Code projects that matched no rule, with minutes. Offer a `sites.txt` pattern for any that clearly belong to a client — for Shopify admin URLs the store handle (`admin.shopify.com/store/<handle>`) is the best pattern. If the summary says an extension is not installed, mention it once; never install anything yourself unless asked.
+- The ActivityWatch section lists window titles, URLs (host and path) and VS Code projects that matched no rule, with minutes. Offer a `sites.txt` pattern for any that clearly belong to a client — for Shopify admin URLs the store handle (`admin.shopify.com/store/<handle>`) is the best pattern. If the summary says an extension is not installed, or that the VS Code extension has no data yet (VS Code needs a reload), mention it once; never install anything yourself unless asked.
 - `--all` lists every session, commit, meeting and note; use it when the user questions the split.
 
 Reply with only the table. Change it only to name `?` rows:

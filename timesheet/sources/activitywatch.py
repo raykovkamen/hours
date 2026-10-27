@@ -100,7 +100,7 @@ def collect(cfg: Config, sites: Sites, tl: Timeline) -> Report:
                     urls[m] = url
 
     unmatched: Counter[str] = Counter()
-    minutes = by_url = 0
+    minutes = with_url = only_url = 0
     for e in events(window):
         t = _ts(e["timestamp"])
         data = e.get("data", {})
@@ -111,17 +111,19 @@ def collect(cfg: Config, sites: Sites, tl: Timeline) -> Report:
             if m in away:
                 continue
             url = urls.get(m, "") if browser else ""
-            site = title_site or (sites.match(url) if url else None)
-            if site and not title_site:
-                by_url += 1
+            url_site = sites.match(url) if url else None
+            site = url_site or title_site  # the address is more precise than a tab title
+            with_url += bool(url)
+            only_url += bool(url_site and not title_site)
             tl.mark(tl.day_start + timedelta(minutes=m), tl.day_start + timedelta(minutes=m + 1), site, SOURCE)
             minutes += 1
             if not site:
                 unmatched[_short_url(url) if url else title[:70]] += 1
 
-    by_project = 0
+    by_project = vscode_events = 0
     for b in vscode:
         for e in events(b):
+            vscode_events += 1
             project = e.get("data", {}).get("project", "")
             site = sites.match(project) if project else None
             for m in _minutes(tl, _ts(e["timestamp"]), e["duration"]):
@@ -135,8 +137,16 @@ def collect(cfg: Config, sites: Sites, tl: Timeline) -> Report:
                     unmatched[f"VS Code project {project[-60:]}"] += 1
 
     extras = []
-    extras.append(f"browser URLs: {by_url} min placed" if web else "browser URLs: extension not installed")
-    extras.append(f"VS Code: {by_project} min placed" if vscode else "VS Code: extension not installed")
+    if not web:
+        extras.append("browser URLs: extension not installed")
+    else:
+        extras.append(f"browser URLs: {with_url} min recorded, {only_url} min placed that the tab title could not")
+    if not vscode:
+        extras.append("VS Code: extension not installed")
+    elif not vscode_events:
+        extras.append("VS Code: extension installed but no data yet - reload VS Code (Developer: Reload Window)")
+    else:
+        extras.append(f"VS Code: {by_project} min placed")
     summary = f"ActivityWatch: ~{minutes // 60}h{minutes % 60:02d} at the keyboard ({'; '.join(extras)})"
     details = [f"  unmatched {what!r}: {n} min" for what, n in unmatched.most_common(15)]
     needs = []

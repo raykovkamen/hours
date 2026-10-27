@@ -33,15 +33,19 @@ def listing(day: date, reports: list[Report], show_all: bool) -> str:
 
 def table(rows: list[Row], sites: Sites, tl: Timeline, cfg: Config, slots: int) -> str:
     w = cfg.workday
-    out = ["| Time | Hours | Site | ClickUp task |", "|---|---|---|---|"]
+    # In create mode the push makes the tasks itself, so a task column would always be empty: leave it out.
+    tasks = cfg.clickup.mode != "create"
+    out = ["| Time | Hours | Site | ClickUp task |", "|---|---|---|---|"] if tasks else ["| Time | Hours | Site |", "|---|---|---|"]
     for r in rows:
+        cells = [f"{r.start:%H:%M}–{r.end:%H:%M}", hours(r.minutes)]
         if r.key == BREAK:
-            out.append(f"| {r.start:%H:%M}–{r.end:%H:%M} | {hours(r.minutes)} | Break | |")
-            continue
-        site, task = sites.split_key(r.key)
-        out.append(f"| {r.start:%H:%M}–{r.end:%H:%M} | {hours(r.minutes)} | {site} | {task or '—'} |")
+            cells += ["Break"] + ([""] if tasks else [])
+        else:
+            site, task = sites.split_key(r.key)
+            cells += [site] + ([task or "—"] if tasks else [])
+        out.append("| " + " | ".join(cells) + " |")
     billed = sum(r.minutes for r in rows if r.key != BREAK)
-    out.append(f"| **Total** | **{hours(billed)}h** (+{hours(w.break_minutes)}h break) | | |")
+    out.append(f"| **Total** | **{hours(billed)}h** (+{hours(w.break_minutes)}h break) |" + (" | |" if tasks else " |"))
 
     per_key = tl.per_key()
     real = ", ".join(f"{sites.split_key(k)[0]} {hours(v[1])}h" for k, v in sorted(per_key.items(), key=lambda kv: kv[1][0]))

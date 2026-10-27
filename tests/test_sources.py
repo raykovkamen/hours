@@ -236,7 +236,7 @@ class ActivityWatchTest(Fixture):
         })
         self.assertEqual(self.tl.per_key()["Acme"][1], 5.0)
         self.assertEqual(report.extensions, {"web": True, "vscode": False})
-        self.assertIn("browser URLs: 5 min placed", report.summary)
+        self.assertIn("browser URLs: 10 min recorded, 5 min placed that the tab title could not", report.summary)
         self.assertIn("example.org/docs/page", report.needs_naming[0])  # short URL, no query string
 
     def test_url_is_ignored_when_a_non_browser_window_is_in_front(self):
