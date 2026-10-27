@@ -88,9 +88,11 @@ def cmd_push(args, cfg, sites) -> int:
         logged = api.entries(day_start, day_start + timedelta(days=1))
         mode = "create" if args.create else cfg.clickup.mode
         titles = pairs(args.title, "--title")
+        prompt_over = pairs(args.prompt, "--prompt")
         p = push.plan(args.day, rows, sites, logged, assign, mode, cfg.clickup.list_id, cfg.clickup.task_name,
-                      titles, tl.evidence_for)
-        push.execute(p, api, args.billable or cfg.clickup.billable, args.dry_run, cfg.log_dir, cfg.clickup.task_status)
+                      titles, tl.evidence_for, lambda site: prompt_over.get(site) or tl.initial_prompt(site))
+        push.execute(p, api, args.billable or cfg.clickup.billable, args.dry_run, cfg.log_dir, cfg.clickup.task_status,
+                     cfg.clickup.prompt_field)
     except ClickUpError as e:
         print(f"Push failed: {e}")
         return 2
@@ -150,6 +152,8 @@ def main(argv: list[str] | None = None) -> int:
         ap.add_argument("--only", action="append", metavar="SITE", help="push only this client's rows (repeatable)")
         ap.add_argument("--title", action="append", metavar="SITE=TITLE",
                         help="create mode: title of the client's daily task (default: from the day's commits)")
+        ap.add_argument("--prompt", action="append", metavar="SITE=TEXT",
+                        help="create mode: value for the task's Initial prompt field (default: the work's first prompt)")
         ap.add_argument("--create", action="store_true", help="create one 'in progress' task per client for the day "
                         "and log the time there (same as [clickup] mode = \"create\")")
     args = ap.parse_args(argv)

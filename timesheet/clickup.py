@@ -91,9 +91,19 @@ class ClickUp:
         return Task(t["id"], t.get("name", ""), status.get("status", ""),
                     (t.get("list") or {}).get("name", ""), (t.get("folder") or {}).get("name", ""))
 
-    def create_task(self, list_id: str, name: str, status: str, assignee_id: int | None) -> Task:
+    def field_id(self, list_id: str, name: str) -> str:
+        """Id of the custom field called `name` (case-insensitive) available on the list, or ""."""
+        cache = self.__dict__.setdefault("_fields", {})
+        if list_id not in cache:
+            cache[list_id] = {f["name"].strip().lower(): f["id"] for f in self._call("GET", f"list/{list_id}/field").get("fields", [])}
+        return cache[list_id].get(name.strip().lower(), "")
+
+    def create_task(self, list_id: str, name: str, status: str, assignee_id: int | None,
+                    custom_fields: list[dict] | None = None) -> Task:
         """Create a task; when the list has no such status, it is created with the list's default status."""
         body: dict = {"name": name}
+        if custom_fields:
+            body["custom_fields"] = custom_fields
         if assignee_id:
             body["assignees"] = [assignee_id]
         try:

@@ -18,6 +18,7 @@ class Timeline:
         self.active: set[int] = set()  # minutes some source saw the user working
         self.by_source: dict[str, int] = defaultdict(int)  # minutes each source contributed
         self.evidence: dict[str, list[tuple[datetime, str, str]]] = defaultdict(list)  # key -> (time, kind, text)
+        self.initials: dict[str, list[tuple[datetime, str]]] = defaultdict(list)  # key -> (session start, first prompt)
 
     # -- writing -------------------------------------------------------------------
     def note(self, key: str, at: datetime, kind: str, text: str) -> None:
@@ -25,6 +26,16 @@ class Timeline:
         text = " ".join(text.split())
         if key and text:
             self.evidence[key].append((at, kind, text))
+
+    def note_initial(self, key: str, session_start: datetime, prompt: str) -> None:
+        if key and prompt:
+            self.initials[key].append((session_start, prompt))
+
+    def initial_prompt(self, site: str) -> str:
+        """The first prompt of the earliest session that worked on the site today (text kept as written)."""
+        found = sorted((e for k, items in self.initials.items() if k == site or k.startswith(f"{site} @") for e in items),
+                       key=lambda e: e[0])
+        return found[0][1] if found else ""
 
     def evidence_for(self, site: str) -> list[tuple[datetime, str, str]]:
         """Everything noted for a site, across its task-specific keys, in time order."""

@@ -74,8 +74,21 @@ def _project_site(sites: Sites, folder: str, cwd: str | None) -> str | None:
     return None
 
 
-def _read(path: str, day, idle: timedelta) -> tuple[list[datetime], list[tuple[datetime, str]], str | None, str | None]:
-    stamps, prompts, cwd, first = [], [], None, None
+def is_real_prompt(c: str) -> bool:
+    """Typed (or pasted) by the user - not a command, hook output, image placeholder or timesheet request."""
+    text = c.strip()
+    if not text or text.startswith("[Image") or any(k in text.lower() for k in TIMESHEET_PHRASES):
+        return False
+    return not text.startswith("<") or bool(PASTED_RE.search(text))
+
+
+def clean_prompt(c: str) -> str:
+    """The prompt as the user wrote it, pasted material included, without the paste markers."""
+    return re.sub(r"</?pasted_content[^>]*>", "", c).strip()
+
+
+def _read(path: str, day, idle: timedelta):
+    stamps, prompts, cwd, first, initial = [], [], None, None, None
     with open(path, encoding="utf-8", errors="replace") as f:
         for line in f:
             try:
@@ -85,6 +98,10 @@ def _read(path: str, day, idle: timedelta) -> tuple[list[datetime], list[tuple[d
             t = d.get("timestamp")
             if not t:
                 continue
+            if initial is None and d.get("type") == "user":  # the session's first prompt, whatever the day
+                c = d.get("message", {}).get("content")
+                if isinstance(c, str) and is_real_prompt(c):
+                    initial = clean_prompt(c)
             local = datetime.fromisoformat(t.replace("Z", "+00:00")).astimezone()
             if local.date() != day:
                 continue
@@ -101,7 +118,7 @@ def _read(path: str, day, idle: timedelta) -> tuple[list[datetime], list[tuple[d
                         prompts.append((local, c.strip()))
     stamps.sort()
     prompts.sort(key=lambda p: p[0])
-    return stamps, prompts, cwd, first
+    return stamps, prompts, cwd, first, initial
 
 
 def collect(cfg: Config, sites: Sites, tl: Timeline) -> Report:
@@ -112,7 +129,7 @@ def collect(cfg: Config, sites: Sites, tl: Timeline) -> Report:
         if datetime.fromtimestamp(os.path.getmtime(path)).date() < tl.day:
             continue
         folder = os.path.basename(os.path.dirname(path))
-        stamps, prompts, cwd, first = _read(path, tl.day, idle)
+        stamps, prompts, cwd, first, initial = _read(path, tl.day, idle)
         if not prompts or (first and any(k in first for k in TIMESHEET_PHRASES)):
             continue
         active = sum(((b - a) for a, b in zip(stamps, stamps[1:]) if b - a <= idle), timedelta())
@@ -141,6 +158,8 @@ def collect(cfg: Config, sites: Sites, tl: Timeline) -> Report:
                 tl.mark(a, b, key, SOURCE)
         for (t, text), (_, key) in zip(prompts, switches):
             tl.note(key, t, "prompt", label(text)[:200])
+        if initial:  # the request that started this session's work, for the task's "Initial prompt" field
+            tl.note_initial(switches[0][1], stamps[0], initial)
         sessions.append(Session(stamps[0], stamps[-1], folder, cwd or "", active, prompts, switches))
 
     sessions.sort(key=lambda s: s.start)

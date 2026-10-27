@@ -49,6 +49,7 @@ class ClickUpConfig:
     mode: str = "existing"  # "existing": log on the task from branch/prompt/sites.txt; "create": one new task per client per day
     list_id: str = ""  # create mode: list for clients without their own `list:ID` in sites.txt
     task_status: str = "in progress"  # create mode: status of the new task (falls back to the list default)
+    prompt_field: str = "Initial prompt"  # create mode: custom field filled with the work's first prompt ("" = off)
     task_name: str = "{title}"  # create mode: {title} (from --title or commits), also {site} and {date}
 
 
@@ -99,7 +100,8 @@ def load(path: Path | None = None) -> Config:
     clickup = ClickUpConfig(token=str(c.get("token", "")), team_id=str(c.get("team_id", "")),
                             billable=bool(c.get("billable", False)), mode=str(c.get("mode", "existing")),
                             list_id=str(c.get("list_id", "")), task_status=str(c.get("task_status", "in progress")),
-                            task_name=str(c.get("task_name", ClickUpConfig.task_name)))
+                            task_name=str(c.get("task_name", ClickUpConfig.task_name)),
+                            prompt_field=str(c.get("prompt_field", ClickUpConfig.prompt_field)))
     if clickup.mode not in ("existing", "create"):
         sys.exit(f'config: [clickup] mode must be "existing" or "create" (got {clickup.mode!r})')
     if workday.step_minutes <= 0 or 60 % workday.step_minutes:

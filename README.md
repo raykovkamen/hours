@@ -117,7 +117,7 @@ Or, if you prefer to do things yourself (respect):
 
 ```
 hours.py [DAY] [--all] [--json]
-hours.py push [DAY] [--dry-run] [--assign "Site=taskid"] [--only Site] [--create] [--title "Site=…"]
+hours.py push [DAY] [--dry-run] [--assign "Site=taskid"] [--only Site] [--create] [--title "Site=…"] [--prompt "Site=…"]
 hours.py check
 ```
 
@@ -154,7 +154,8 @@ assigned to you — in the client's list, and the day's time goes there. Push ag
 that task instead of opening a second one — even if you renamed it. Delete it, and we open a fresh one.
 The title says what you did: `/hours push` has Claude read your commits and prompts and write it
 (`Checkout VAT field and ERP SKU sync`), you approve it in the dry run. No description, no stamps, no keys — just the title; we remember the
-task in `logs/`. Running it by hand? `--title "Acme=…"`, or we take your first commit subject.
+task in `logs/`. If the list has an **Initial prompt** field, it gets the request that started the work:
+the first prompt of the Claude session behind it, exactly as you typed (or pasted) it. Evidence, filed. Running it by hand? `--title "Acme=…"`, or we take your first commit subject.
 Your prompts never leave the building — they inform the title, they don't appear in it. The list comes from `list:<id>` on the client's line in
 `sites.txt` (the number in the list's URL), or `[clickup] list_id` as the catch-all.
 

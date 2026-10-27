@@ -128,7 +128,11 @@ class CreateApi(FakeApi):
     def user(self):
         return {"id": 42}
 
-    def create_task(self, list_id, name, status, assignee_id):
+    def field_id(self, list_id, name):
+        return "F1" if name.lower() == "initial prompt" else ""
+
+    def create_task(self, list_id, name, status, assignee_id, custom_fields=None):
+        self.fields = getattr(self, "fields", []) + [custom_fields]
         if list_id in self.bad_lists:
             from timesheet.clickup import ClickUpError
             raise ClickUpError("HTTP 404 list not found")
@@ -234,6 +238,30 @@ class CreateModeTest(unittest.TestCase):
         self.logs.mkdir()
         (self.logs / "push-2026-10-27.jsonl").write_text(json.dumps({"mode": "create", "dry_run": True, "site": "Acme", "task": "X"}) + "\n")
         self.assertEqual(push.known_task(self.logs, "Acme", DAY), "")
+
+    def test_initial_prompt_fills_the_custom_field(self):
+        api = CreateApi()
+        p = push.plan(DAY, [row(9, 0, 10, 0, "Acme")], self.sites, [], {}, "create", "", "{title}",
+                      {"Acme": "Checkout VAT"}, None, lambda s: "fix the VAT field\non checkout" if s == "Acme" else "")
+        push.execute(p, api, billable=False, dry_run=False, log_dir=self.logs, prompt_field="Initial prompt")
+        self.assertEqual(api.fields, [[{"id": "F1", "value": "fix the VAT field\non checkout"}]])
+        self.assertIn("Initial prompt: fix the VAT field on checkout", push.render(p, dry_run=False))
+
+    def test_no_field_when_list_lacks_it_or_feature_is_off(self):
+        api = CreateApi()
+        p = push.plan(DAY, [row(9, 0, 10, 0, "Acme")], self.sites, [], {}, "create", "", "{title}",
+                      None, None, lambda s: "a prompt")
+        push.execute(p, api, billable=False, dry_run=False, log_dir=self.logs, prompt_field="")
+        self.assertEqual(api.fields, [None])
+        self.assertNotIn("Initial prompt", push.render(p, dry_run=False))
+
+    def test_existing_daily_task_is_not_touched(self):
+        api = CreateApi()
+        self.remember("Acme", "D1")
+        p = push.plan(DAY, [row(9, 0, 10, 0, "Acme")], self.sites, [], {}, "create", "", "{title}",
+                      None, None, lambda s: "a prompt")
+        push.execute(p, api, billable=False, dry_run=False, log_dir=self.logs, prompt_field="Initial prompt")
+        self.assertFalse(hasattr(api, "fields"))
 
     def test_bad_list_blocks_before_anything_is_written(self):
         api = CreateApi(bad_lists={"L1"})

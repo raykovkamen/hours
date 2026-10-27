@@ -23,6 +23,7 @@ from .allocate import BREAK, Row
 from .clickup import ClickUp, ClickUpError, Entry, Task
 from .sites import UNKNOWN, Sites, is_unnamed
 
+MAX_PROMPT = 5000  # characters kept for the "Initial prompt" field
 DESCRIPTION = "hours"  # entries this tool wrote carry it, so they can be told apart in ClickUp
 
 
@@ -39,6 +40,8 @@ class Action:
     list_id: str = ""  # create mode
     task_name: str = ""  # create mode
     created: bool = False  # create mode: the task was created by this run (or would be, in a dry run)
+    prompt: str = ""  # create mode: value for the "Initial prompt" field of a new task
+    prompt_set: bool = False  # the field existed on the list and was filled
 
     @property
     def skipped(self) -> bool:
@@ -89,13 +92,15 @@ def auto_title(evidence: list[tuple[datetime, str, str]], limit: int = 70) -> st
 
 def plan(day: date, rows: list[Row], sites: Sites, logged: list[Entry], assign: dict[str, str],
          mode: str = "existing", default_list: str = "", task_name: str = "{title}",
-         titles: dict[str, str] | None = None, evidence=None) -> Plan:
+         titles: dict[str, str] | None = None, evidence=None, prompts=None) -> Plan:
     """Decide what to post. `assign` maps a site to a task id (existing mode) or `list:ID` (create mode).
 
     Create mode only: `titles` (site -> title) override the automatic title from the day's commits,
     `evidence` (site -> [(time, kind, text)]) feeds that automatic title. Daily tasks have no description.
+    `prompts` (site -> text) is the work's initial prompt, stored in the task's "Initial prompt" field.
     """
     titles = titles or {}
+    prompts = prompts or (lambda site: "")
     evidence = evidence or (lambda site: [])
     p = Plan(day, mode)
     for e in logged:
@@ -133,7 +138,8 @@ def plan(day: date, rows: list[Row], sites: Sites, logged: list[Entry], assign: 
             ev = evidence(key)
             title = titles.get(key) or auto_title(ev) or day.isoformat()
             name = task_name.format(site=key, date=day.isoformat(), title=title)
-            p.actions.append(Action("", key, start, minutes, minutes, 0, list_id=extra, task_name=name))
+            p.actions.append(Action("", key, start, minutes, minutes, 0, list_id=extra, task_name=name,
+                                    prompt=prompts(key)[:MAX_PROMPT]))
         else:
             already = int(round(p.logged_by_task.get(key, 0)))
             p.actions.append(Action(key, extra, start, minutes - already, minutes, already))
@@ -141,7 +147,7 @@ def plan(day: date, rows: list[Row], sites: Sites, logged: list[Entry], assign: 
 
 
 def _resolve_daily_task(p: Plan, a: Action, api: ClickUp, status: str, me: int | None, dry_run: bool,
-                        log_dir: Path) -> None:
+                        log_dir: Path, prompt_field: str = "") -> None:
     """Reuse the task an earlier push created today (if it still exists in ClickUp), else create one."""
     found = None
     tid = known_task(log_dir, a.site, p.day)
@@ -154,14 +160,17 @@ def _resolve_daily_task(p: Plan, a: Action, api: ClickUp, status: str, me: int |
         a.task, a.task_id = found, found.id
         a.logged_minutes = int(round(p.logged_by_task.get(found.id, 0)))
         a.minutes = a.table_minutes - a.logged_minutes
-    elif dry_run:
-        a.created = True
-    else:
-        a.task = api.create_task(a.list_id, a.task_name, status, me)
-        a.task_id, a.created = a.task.id, True
+        return
+    fid = api.field_id(a.list_id, prompt_field) if (prompt_field and a.prompt) else ""
+    fields = [{"id": fid, "value": a.prompt}] if fid else None
+    a.created, a.prompt_set = True, bool(fid)
+    if not dry_run:
+        a.task = api.create_task(a.list_id, a.task_name, status, me, fields)
+        a.task_id = a.task.id
 
 
-def execute(p: Plan, api: ClickUp, billable: bool, dry_run: bool, log_dir: Path, status: str = "in progress") -> None:
+def execute(p: Plan, api: ClickUp, billable: bool, dry_run: bool, log_dir: Path, status: str = "in progress",
+            prompt_field: str = "") -> None:
     """Validate (or find/create) every task, then post. Appends a JSON-lines log of the run, dry runs included."""
     if p.blocked:
         return
@@ -169,7 +178,7 @@ def execute(p: Plan, api: ClickUp, billable: bool, dry_run: bool, log_dir: Path,
         me = api.user().get("id")
         for a in p.actions:
             try:
-                _resolve_daily_task(p, a, api, status, me, dry_run, log_dir)
+                _resolve_daily_task(p, a, api, status, me, dry_run, log_dir, prompt_field)
             except ClickUpError as e:
                 p.blocked.append(f"{a.site}: list {a.list_id} - {e}")
     else:
@@ -210,7 +219,11 @@ def render(p: Plan, dry_run: bool) -> str:
     created = [a for a in p.actions if a.created]
     if created:
         out.append(f"{'Would create' if dry_run else 'Created'} {len(created)} task(s), status \"in progress\", assigned to you:")
-        out += [f"  - {_name(a)}" for a in created]
+        for a in created:
+            out.append(f"  - {_name(a)}")
+            if a.prompt_set:
+                first = " ".join(a.prompt.split())
+                out.append(f"      Initial prompt: {first[:100]}{'…' if len(first) > 100 else ''}")
     if posted:
         out.append(f"{verb} {len(posted)} entr{'y' if len(posted) == 1 else 'ies'}:")
         for a in posted:
