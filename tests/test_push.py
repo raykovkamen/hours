@@ -37,6 +37,12 @@ class FakeApi:
         self.posted.append((task_id, start, minutes, description, billable))
         return f"entry-{len(self.posted)}"
 
+    def shorten_entry(self, entry_id, start, minutes):
+        self.__dict__.setdefault("changed", []).append(("shorten", entry_id, minutes))
+
+    def delete_entry(self, entry_id):
+        self.__dict__.setdefault("changed", []).append(("delete", entry_id))
+
 
 class PlanTest(unittest.TestCase):
     def setUp(self):
@@ -269,6 +275,117 @@ class CreateModeTest(unittest.TestCase):
         push.execute(p, api, billable=False, dry_run=False, log_dir=self.logs)
         self.assertFalse(p.ok)
         self.assertEqual((api.created, api.posted), ([], []))
+
+
+
+class ReconcileTest(unittest.TestCase):
+    """The push makes ClickUp match the table: it adds, shrinks its own entries, never touches hand-made ones."""
+
+    def setUp(self):
+        self.dir = tempfile.TemporaryDirectory()
+        p = Path(self.dir.name) / "sites.txt"
+        p.write_text("acme = Acme | T1 list:L1\n", encoding="utf-8")
+        self.sites = Sites(p)
+        self.logs = Path(self.dir.name) / "logs"
+
+    def tearDown(self):
+        self.dir.cleanup()
+
+    def entry(self, eid, h, minutes, mine=True, task="T1"):
+        return Entry(eid, task, "Task", at(h), minutes, "hours: Acme" if mine else "")
+
+    def test_less_time_shrinks_our_newest_entries_first(self):
+        logged = [self.entry("e1", 9, 60), self.entry("e2", 13, 30)]
+        p = push.plan(DAY, [row(9, 0, 9, 45, "Acme")], self.sites, logged, {})
+        a = p.actions[0]
+        self.assertEqual((a.table_minutes, a.logged_minutes, a.minutes), (45, 90, -45))
+        self.assertEqual([(e.id, new) for e, new in a.shrink], [("e2", 0), ("e1", 45)])
+        self.assertEqual(a.by_hand_excess, 0)
+        api = FakeApi()
+        push.execute(p, api, billable=False, dry_run=False, log_dir=self.logs)
+        self.assertEqual(api.posted, [])
+        self.assertEqual(api.changed, [("delete", "e2"), ("shorten", "e1", 45)])
+        out = push.render(p, dry_run=False)
+        self.assertIn("Reduced", out)
+        self.assertIn("-45 min", out)
+
+    def test_hand_logged_time_is_never_changed(self):
+        logged = [self.entry("mine", 9, 30), self.entry("hand", 10, 60, mine=False)]
+        p = push.plan(DAY, [row(9, 0, 9, 30, "Acme")], self.sites, logged, {})
+        a = p.actions[0]
+        self.assertEqual([(e.id, new) for e, new in a.shrink], [("mine", 0)])
+        self.assertEqual(a.by_hand_excess, 30)
+        self.assertIn("Logged by hand beyond the table", push.render(p, dry_run=True))
+
+    def test_dry_run_changes_nothing(self):
+        p = push.plan(DAY, [row(9, 0, 9, 30, "Acme")], self.sites, [self.entry("e1", 9, 60)], {})
+        api = FakeApi()
+        push.execute(p, api, billable=False, dry_run=True, log_dir=self.logs)
+        self.assertFalse(hasattr(api, "changed"))
+        self.assertIn("Would reduce", push.render(p, dry_run=True))
+
+    def test_equal_time_changes_nothing(self):
+        p = push.plan(DAY, [row(9, 0, 10, 0, "Acme")], self.sites, [self.entry("e1", 9, 60)], {})
+        api = FakeApi()
+        push.execute(p, api, billable=False, dry_run=False, log_dir=self.logs)
+        self.assertEqual((api.posted, getattr(api, "changed", [])), ([], []))
+        self.assertIn("Already logged", push.render(p, dry_run=False))
+
+    def test_create_mode_without_log_finds_the_task_from_todays_entries(self):
+        api = CreateApi()
+        api.tasks = {"D1": Task("D1", "Yesterday's name", "in progress", "DEV", "Client", "L1", datetime(2026, 10, 27, 9, tzinfo=TZ)),
+                     "OLD": Task("OLD", "Old", "open", "DEV", "Client", "L1", datetime(2026, 9, 1, tzinfo=TZ)),
+                     "ELSE": Task("ELSE", "Other list", "open", "DEV", "Client", "L9", datetime(2026, 10, 27, tzinfo=TZ))}
+        logged = [self.entry("x1", 8, 10, task="OLD"), self.entry("x2", 8, 10, task="ELSE"), self.entry("e1", 9, 30, task="D1")]
+        p = push.plan(DAY, [row(9, 0, 10, 0, "Acme")], self.sites, logged, {}, "create", "", "{title}")
+        push.execute(p, api, billable=False, dry_run=False, log_dir=self.logs)  # no push log exists
+        self.assertEqual(api.created, [])
+        self.assertEqual(api.posted, [("D1", at(9, 0), 30, "hours: Acme", False)])
+
+
+class RetryTest(unittest.TestCase):
+    def test_rate_limit_and_server_errors_are_retried_then_succeed(self):
+        import io
+        import urllib.error
+        from unittest import mock
+        from timesheet.clickup import ClickUp
+        calls, pauses = [], []
+
+        class Ok:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def read(self):
+                return b'{"user": {"id": 1}}'
+
+        def urlopen(req, timeout):
+            calls.append(req.full_url)
+            if len(calls) == 1:
+                raise urllib.error.HTTPError(req.full_url, 429, "Too Many", {}, io.BytesIO(b""))
+            if len(calls) == 2:
+                raise urllib.error.HTTPError(req.full_url, 503, "Unavailable", {}, io.BytesIO(b""))
+            return Ok()
+
+        api = ClickUp("pk", "1", sleep=pauses.append)
+        with mock.patch("urllib.request.urlopen", side_effect=urlopen):
+            self.assertEqual(api.user(), {"id": 1})
+        self.assertEqual(len(calls), 3)
+        self.assertEqual(pauses, [2.0, 4.0])
+
+    def test_client_errors_are_not_retried(self):
+        import io
+        import urllib.error
+        from unittest import mock
+        from timesheet.clickup import ClickUp, ClickUpError
+        err = urllib.error.HTTPError("u", 404, "Not Found", {}, io.BytesIO(b"{}"))
+        api = ClickUp("pk", "1", sleep=lambda s: self.fail("should not wait"))
+        with mock.patch("urllib.request.urlopen", side_effect=err) as m:
+            with self.assertRaises(ClickUpError):
+                api.user()
+        self.assertEqual(m.call_count, 1)
 
 
 if __name__ == "__main__":

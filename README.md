@@ -195,16 +195,21 @@ day's time goes there:
   file a different one, `prompt_field = ""` to file none.
 - **The list** comes from `list:<id>` on the client's line in `sites.txt` (the number in the list's URL),
   or `[clickup] list_id` as the catch-all.
-- **Push again later** and we find the same task through `logs/` and add only the missing minutes —
-  even if you renamed it. Delete it in ClickUp, and the next push opens a fresh one.
+- **Push again later** and we find the same task — even if you renamed it. We look in `logs/` first; lost
+  the folder, or pushing from your other laptop? We find it through today's `hours: <client>` entries
+  instead. Delete it in ClickUp, and the next push opens a fresh one.
 
 ### Either way
 
 1. **Nothing is filed half-done.** A `?` row, an `Unknown` row, a row without a task (existing mode) or
    without a list (create mode) blocks the push and tells you exactly what to fix.
 2. **Everything is checked first.** A mistyped task or list id stops the push before a single entry exists.
-3. **Only the difference is filed.** We read what you already logged today and post what's missing per
-   task. Push at noon, push at five, push again by accident — nothing doubles.
+3. **ClickUp ends up matching the table.** We read what's already logged per task today. Table has more?
+   We post the difference. Table has the same? We do nothing — push at noon, push at five, push again by
+   accident, nothing doubles. Table has *less* (you named a `?` row, a minute moved to another client)? We
+   shorten or remove the entries **we** filed, newest first. Entries you logged by hand are your
+   testimony: we never touch them, we just tell you when they add up to more than the table.
+   ClickUp having a bad day (rate limits, a 503, a dropped connection)? We wait and try again.
 4. **One entry per task**, starting at its first row, described `hours: <client>`, non-billable unless you
    say otherwise. Every run, dry or real, goes in `logs/push-<day>.jsonl`. Receipts.
 5. **Dry run first.** `/hours push` always shows you the plan before it files anything. By hand:
@@ -253,7 +258,7 @@ python -m unittest discover -s tests -t .
 and `sources/` with one file per witness: `activitywatch.py`, `claude_sessions.py`, `git_commits.py`,
 `calendar_ics.py` (with its own recurrence engine — weekly standups, last-Friday retros, moved meetings),
 `manual.py`. Adding a witness — a calendar, a ticket system — is one module
-and one line. Ninety-one tests cover the lot, including a fake ClickUp, a fake ActivityWatch, a real temporary
+and one line. Ninety-eight tests cover the lot, including a fake ClickUp, a fake ActivityWatch, a real temporary
 git repo and a calendar full of awkward recurring meetings.
 
 ---

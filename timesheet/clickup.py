@@ -2,10 +2,12 @@
 
 Authentication uses a personal API token (ClickUp > Settings > Apps > API Token), read from
 `[clickup] token` in config.toml or the CLICKUP_TOKEN environment variable. The token is never logged.
+Rate limits (HTTP 429), server errors (5xx) and dropped connections are retried with a growing pause.
 """
 from __future__ import annotations
 
 import json
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -13,6 +15,9 @@ from dataclasses import dataclass
 from datetime import datetime
 
 API = "https://api.clickup.com/api/v2"
+RETRIES = 4  # attempts after the first, for 429 / 5xx / network errors
+RETRY_WAIT = 2.0  # seconds before the first retry; doubles each time (capped by RETRY_MAX)
+RETRY_MAX = 30.0
 
 
 class ClickUpError(RuntimeError):
@@ -26,6 +31,8 @@ class Task:
     status: str
     list_name: str
     folder_name: str
+    list_id: str = ""
+    created: datetime | None = None
 
     @property
     def location(self) -> str:
@@ -47,11 +54,12 @@ def to_ms(at: datetime) -> int:
 
 
 class ClickUp:
-    def __init__(self, token: str, team_id: str = ""):
+    def __init__(self, token: str, team_id: str = "", sleep=time.sleep):
         if not token:
             raise ClickUpError("no ClickUp token: set [clickup] token in config.toml or CLICKUP_TOKEN")
         self._token = token
         self.team_id = team_id
+        self._sleep = sleep
 
     # -- transport -----------------------------------------------------------------
     def _call(self, method: str, path: str, params: dict | None = None, body: dict | None = None) -> dict:
@@ -59,16 +67,30 @@ class ClickUp:
         if params:
             url += "?" + urllib.parse.urlencode(params)
         data = json.dumps(body).encode() if body is not None else None
-        req = urllib.request.Request(url, data=data, method=method,
-                                     headers={"Authorization": self._token, "Content-Type": "application/json"})
-        try:
-            with urllib.request.urlopen(req, timeout=20) as r:
-                return json.load(r)
-        except urllib.error.HTTPError as e:
-            detail = e.read().decode(errors="replace")[:300]
-            raise ClickUpError(f"ClickUp {method} {path}: HTTP {e.code} {detail}") from None
-        except (urllib.error.URLError, OSError) as e:
-            raise ClickUpError(f"ClickUp unreachable: {e}") from None
+        wait = RETRY_WAIT
+        for attempt in range(RETRIES + 1):
+            req = urllib.request.Request(url, data=data, method=method,
+                                         headers={"Authorization": self._token, "Content-Type": "application/json"})
+            try:
+                with urllib.request.urlopen(req, timeout=20) as r:
+                    raw = r.read()
+                    return json.loads(raw) if raw.strip() else {}
+            except urllib.error.HTTPError as e:
+                detail = e.read().decode(errors="replace")[:300]
+                retryable = e.code == 429 or e.code >= 500
+                if not retryable or attempt == RETRIES:
+                    raise ClickUpError(f"ClickUp {method} {path}: HTTP {e.code} {detail}") from None
+                reset = (e.headers or {}).get("X-RateLimit-Reset") if e.code == 429 else None
+                pause = wait
+                if reset and str(reset).isdigit():  # epoch seconds when the limit resets
+                    pause = max(1.0, min(RETRY_MAX, int(reset) - time.time()))
+            except (urllib.error.URLError, OSError) as e:
+                if attempt == RETRIES:
+                    raise ClickUpError(f"ClickUp unreachable: {e}") from None
+                pause = wait
+            self._sleep(pause)
+            wait = min(RETRY_MAX, wait * 2)
+        raise ClickUpError("unreachable")  # pragma: no cover - the loop always returns or raises
 
     # -- identity ------------------------------------------------------------------
     def user(self) -> dict:
@@ -88,8 +110,11 @@ class ClickUp:
     def task(self, task_id: str) -> Task:
         t = self._call("GET", f"task/{task_id}")
         status = t.get("status") or {}
+        created = t.get("date_created")
         return Task(t["id"], t.get("name", ""), status.get("status", ""),
-                    (t.get("list") or {}).get("name", ""), (t.get("folder") or {}).get("name", ""))
+                    (t.get("list") or {}).get("name", ""), (t.get("folder") or {}).get("name", ""),
+                    str((t.get("list") or {}).get("id", "")),
+                    datetime.fromtimestamp(int(created) / 1000).astimezone() if created else None)
 
     def field_id(self, list_id: str, name: str) -> str:
         """Id of the custom field called `name` (case-insensitive) available on the list, or ""."""
@@ -133,3 +158,13 @@ class ClickUp:
         body = {"tid": task_id, "start": to_ms(start), "duration": minutes * 60000,
                 "description": description, "billable": billable}
         return str(self._call("POST", f"team/{team}/time_entries", body=body)["data"]["id"])
+
+    def shorten_entry(self, entry_id: str, start: datetime, minutes: int) -> None:
+        """Set an entry's duration (used only on entries this tool wrote)."""
+        team = self.resolve_team()
+        self._call("PUT", f"team/{team}/time_entries/{entry_id}",
+                   body={"start": to_ms(start), "end": to_ms(start) + minutes * 60000, "duration": minutes * 60000})
+
+    def delete_entry(self, entry_id: str) -> None:
+        team = self.resolve_team()
+        self._call("DELETE", f"team/{team}/time_entries/{entry_id}")
