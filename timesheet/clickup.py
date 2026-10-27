@@ -91,11 +91,9 @@ class ClickUp:
         return Task(t["id"], t.get("name", ""), status.get("status", ""),
                     (t.get("list") or {}).get("name", ""), (t.get("folder") or {}).get("name", ""))
 
-    def create_task(self, list_id: str, name: str, status: str, assignee_id: int | None, description: str = "") -> Task:
+    def create_task(self, list_id: str, name: str, status: str, assignee_id: int | None) -> Task:
         """Create a task; when the list has no such status, it is created with the list's default status."""
         body: dict = {"name": name}
-        if description:
-            body["markdown_description"] = description
         if assignee_id:
             body["assignees"] = [assignee_id]
         try:

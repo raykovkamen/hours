@@ -128,13 +128,12 @@ class CreateApi(FakeApi):
     def user(self):
         return {"id": 42}
 
-    def create_task(self, list_id, name, status, assignee_id, description=""):
+    def create_task(self, list_id, name, status, assignee_id):
         if list_id in self.bad_lists:
             from timesheet.clickup import ClickUpError
             raise ClickUpError("HTTP 404 list not found")
         tid = f"new{len(self.created) + 1}"
         self.created.append((list_id, name, status, assignee_id))
-        self.descriptions = getattr(self, "descriptions", []) + [description]
         self.existing[(list_id, name)] = tid
         return Task(tid, name, status, "DEV", "Client")
 
@@ -201,23 +200,18 @@ class CreateModeTest(unittest.TestCase):
         self.assertIn("Would create 1 task", out)
         self.assertIn("new task in list L1", out)
 
-    def test_title_from_commits_or_override_and_description_without_prompts(self):
+    def test_title_from_commits_or_override(self):
         ev = {"Acme": [(at(9, 10), "prompt", "secret client text"), (at(9, 20), "commit", "Merge branch main"),
                        (at(9, 30), "commit", "Fix VAT field in checkout"), (at(10, 0), "commit", "Add tests")]}
         p = self.plan([row(9, 0, 10, 0, "Acme")], name="{title}", evidence=lambda s: ev.get(s, []))
-        a = p.actions[0]
-        self.assertEqual(a.task_name, "Fix VAT field in checkout (+1 more)")
-        self.assertEqual(a.description, "**Commits**\n- 09:30 Fix VAT field in checkout\n- 10:00 Add tests")
-        p = push.plan(DAY, [row(9, 0, 10, 0, "Acme")], self.sites, [], {}, "create", "", "{title}",
-                      {"Acme": "Checkout VAT fixes"}, lambda s: ev.get(s, []), {"Acme": "Fixed the VAT field."})
+        self.assertEqual(p.actions[0].task_name, "Fix VAT field in checkout (+1 more)")
+        p = self.plan([row(9, 0, 10, 0, "Acme")], name="{title}", titles={"Acme": "Checkout VAT fixes"},
+                      evidence=lambda s: ev.get(s, []))
         self.assertEqual(p.actions[0].task_name, "Checkout VAT fixes")
-        self.assertEqual(p.actions[0].description.splitlines()[:3], ["Fixed the VAT field.", "", "**Commits**"])
-        self.assertNotIn("hours", p.actions[0].description)
 
     def test_title_falls_back_to_the_date_without_commits(self):
         p = self.plan([row(9, 0, 10, 0, "Acme")], name="{title}")
         self.assertEqual(p.actions[0].task_name, "2026-10-27")
-        self.assertEqual(p.actions[0].description, "")
 
     def test_renamed_daily_task_is_found_through_the_push_log(self):
         api = CreateApi()

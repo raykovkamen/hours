@@ -87,9 +87,9 @@ def cmd_push(args, cfg, sites) -> int:
         day_start = datetime.combine(args.day, datetime.min.time()).replace(tzinfo=tz)
         logged = api.entries(day_start, day_start + timedelta(days=1))
         mode = "create" if args.create else cfg.clickup.mode
-        titles, summaries = pairs(args.title, "--title"), pairs(args.summary, "--summary")
+        titles = pairs(args.title, "--title")
         p = push.plan(args.day, rows, sites, logged, assign, mode, cfg.clickup.list_id, cfg.clickup.task_name,
-                      titles, tl.evidence_for, summaries)
+                      titles, tl.evidence_for)
         push.execute(p, api, args.billable or cfg.clickup.billable, args.dry_run, cfg.log_dir, cfg.clickup.task_status)
     except ClickUpError as e:
         print(f"Push failed: {e}")
@@ -150,8 +150,6 @@ def main(argv: list[str] | None = None) -> int:
         ap.add_argument("--only", action="append", metavar="SITE", help="push only this client's rows (repeatable)")
         ap.add_argument("--title", action="append", metavar="SITE=TITLE",
                         help="create mode: title of the client's daily task (default: from the day's commits)")
-        ap.add_argument("--summary", action="append", metavar="SITE=TEXT",
-                        help="create mode: summary at the top of the task description")
         ap.add_argument("--create", action="store_true", help="create one 'in progress' task per client for the day "
                         "and log the time there (same as [clickup] mode = \"create\")")
     args = ap.parse_args(argv)

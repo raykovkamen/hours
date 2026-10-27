@@ -153,8 +153,8 @@ existing tasks at all: each client gets one new task per day, named after what y
 assigned to you — in the client's list, and the day's time goes there. Push again later and we find
 that task instead of opening a second one — even if you renamed it. Delete it, and we open a fresh one.
 The title says what you did: `/hours push` has Claude read your commits and prompts and write it
-(`Checkout VAT field and ERP SKU sync`), you approve it in the dry run, and the description holds a
-short summary and the day's commits. Nothing else — no stamps, no keys; we remember the task in `logs/`. Running it by hand? `--title "Acme=…"`, or we take your first commit subject.
+(`Checkout VAT field and ERP SKU sync`), you approve it in the dry run. No description, no stamps, no keys — just the title; we remember the
+task in `logs/`. Running it by hand? `--title "Acme=…"`, or we take your first commit subject.
 Your prompts never leave the building — they inform the title, they don't appear in it. The list comes from `list:<id>` on the client's line in
 `sites.txt` (the number in the list's URL), or `[clickup] list_id` as the catch-all.
 

@@ -38,7 +38,6 @@ class Action:
     entry_id: str = ""
     list_id: str = ""  # create mode
     task_name: str = ""  # create mode
-    description: str = ""  # create mode: task description (summary + commits)
     created: bool = False  # create mode: the task was created by this run (or would be, in a dry run)
 
     @property
@@ -88,25 +87,15 @@ def auto_title(evidence: list[tuple[datetime, str, str]], limit: int = 70) -> st
     return f"{title} (+{len(commits) - 1} more)" if len(commits) > 1 else title
 
 
-def describe(evidence: list[tuple[datetime, str, str]], summary: str = "") -> str:
-    """Task description: the summary, then the day's commits. Never prompts - they can hold client material."""
-    commits = [(t, text) for t, kind, text in evidence if kind == "commit" and not text.lower().startswith("merge ")]
-    out = [summary.strip()] if summary.strip() else []
-    if commits:
-        out += (["", "**Commits**"] if out else ["**Commits**"]) + [f"- {t:%H:%M} {text}" for t, text in commits[:20]]
-    return "\n".join(out)
-
-
 def plan(day: date, rows: list[Row], sites: Sites, logged: list[Entry], assign: dict[str, str],
          mode: str = "existing", default_list: str = "", task_name: str = "{title}",
-         titles: dict[str, str] | None = None, evidence=None, summaries: dict[str, str] | None = None) -> Plan:
+         titles: dict[str, str] | None = None, evidence=None) -> Plan:
     """Decide what to post. `assign` maps a site to a task id (existing mode) or `list:ID` (create mode).
 
     Create mode only: `titles` (site -> title) override the automatic title from the day's commits,
-    `evidence` (site -> [(time, kind, text)]) feeds that automatic title and the task description,
-    `summaries` (site -> text) go at the top of the description.
+    `evidence` (site -> [(time, kind, text)]) feeds that automatic title. Daily tasks have no description.
     """
-    titles, summaries = titles or {}, summaries or {}
+    titles = titles or {}
     evidence = evidence or (lambda site: [])
     p = Plan(day, mode)
     for e in logged:
@@ -144,8 +133,7 @@ def plan(day: date, rows: list[Row], sites: Sites, logged: list[Entry], assign: 
             ev = evidence(key)
             title = titles.get(key) or auto_title(ev) or day.isoformat()
             name = task_name.format(site=key, date=day.isoformat(), title=title)
-            p.actions.append(Action("", key, start, minutes, minutes, 0, list_id=extra, task_name=name,
-                                    description=describe(ev, summaries.get(key, ""))))
+            p.actions.append(Action("", key, start, minutes, minutes, 0, list_id=extra, task_name=name))
         else:
             already = int(round(p.logged_by_task.get(key, 0)))
             p.actions.append(Action(key, extra, start, minutes - already, minutes, already))
@@ -169,7 +157,7 @@ def _resolve_daily_task(p: Plan, a: Action, api: ClickUp, status: str, me: int |
     elif dry_run:
         a.created = True
     else:
-        a.task = api.create_task(a.list_id, a.task_name, status, me, a.description)
+        a.task = api.create_task(a.list_id, a.task_name, status, me)
         a.task_id, a.created = a.task.id, True
 
 
