@@ -211,7 +211,8 @@ day's time goes there:
 ### Either way
 
 1. **Nothing is filed half-done.** A `?` row, an `Unknown` row, a row without a task (existing mode) or
-   without a list (create mode) blocks the push and tells you exactly what to fix.
+   without a list (create mode) blocks the push and tells you exactly what to fix. Name a `?` row with
+   `hours.py name 11:00 Client` and it stays named — for the table and every later push.
 2. **Everything is checked first.** A mistyped task or list id stops the push before a single entry exists.
 3. **ClickUp ends up matching the table.** We read what's already logged per task today. Table has more?
    We post the difference. Table has the same? We do nothing — push at noon, push at five, push again by
@@ -235,7 +236,10 @@ pattern = Site Name | clickup_task_id list:clickup_list_id    # both optional
 A `pattern` is a case-insensitive substring tried against folder names, repository names, window titles
 and prompts. First match wins, so specific lines go above generic ones. Add store domains and admin page
 titles (`acme.com = Acme`) so browser work gets placed. Unknown project folder? We name it after the folder
-(`what-the-pink` → `What The Pink`), append the line, and let you fix the spelling.
+(`what-the-pink` → `What The Pink`), append the line once, and let you fix the spelling. A project under a
+container (`D:\MIGRATIONrava-migration`) is matched by its own name too. New Shopify stores need no
+line from you: `/hours` reads the store name from the admin tab (`store_names.py`) and files the handle under
+the right client.
 
 ---
 
