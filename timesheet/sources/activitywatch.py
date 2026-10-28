@@ -100,7 +100,10 @@ def collect(cfg: Config, sites: Sites, tl: Timeline) -> Report:
                     urls[m] = url
 
     unmatched: Counter[str] = Counter()
-    minutes = with_url = only_url = 0
+    # distinct minutes: a minute with several window switches is still one minute at the keyboard
+    seen: set[int] = set()
+    with_url: set[int] = set()
+    only_url: set[int] = set()
     for e in events(window):
         t = _ts(e["timestamp"])
         data = e.get("data", {})
@@ -113,10 +116,12 @@ def collect(cfg: Config, sites: Sites, tl: Timeline) -> Report:
             url = urls.get(m, "") if browser else ""
             url_site = sites.match(url) if url else None
             site = url_site or title_site  # the address is more precise than a tab title
-            with_url += bool(url)
-            only_url += bool(url_site and not title_site)
+            if url:
+                with_url.add(m)
+            if url_site and not title_site:
+                only_url.add(m)
             tl.mark_minutes((m,), site, SOURCE)
-            minutes += 1
+            seen.add(m)
             if not site:
                 unmatched[_short_url(url) if url else title[:70]] += 1
 
@@ -139,13 +144,14 @@ def collect(cfg: Config, sites: Sites, tl: Timeline) -> Report:
     if not web:
         extras.append("browser URLs: extension not installed")
     else:
-        extras.append(f"browser URLs: {with_url} min recorded, {only_url} min placed that the tab title could not")
+        extras.append(f"browser URLs: {len(with_url)} min recorded, {len(only_url)} min placed that the tab title could not")
     if not vscode:
         extras.append("VS Code: extension not installed")
     elif not vscode_events:
         extras.append("VS Code: extension installed but no data yet - reload VS Code (Developer: Reload Window)")
     else:
         extras.append(f"VS Code: {by_project} min placed")
+    minutes = len(seen)
     summary = f"ActivityWatch: ~{minutes // 60}h{minutes % 60:02d} at the keyboard ({'; '.join(extras)})"
     details = [f"  unmatched {what!r}: {n} min" for what, n in unmatched.most_common(15)]
     needs = []

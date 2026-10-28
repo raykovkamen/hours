@@ -218,6 +218,15 @@ class ActivityWatchTest(Fixture):
         self.assertEqual(self.tl.active_minutes(), 15)  # 5 afk minutes removed from the Gmail window
         self.assertIn("Inbox - Gmail", report.needs_naming[0])
 
+    def test_window_switches_within_a_minute_count_it_once(self):
+        report = self.collect([
+            {"timestamp": iso(at(9, 0) + timedelta(seconds=s)), "duration": 10,
+             "data": {"app": "chrome.exe", "title": f"tab {s}"}}
+            for s in range(0, 60, 10)
+        ])
+        self.assertEqual(self.tl.active_minutes(), 1)
+        self.assertIn("~0h01 at the keyboard", report.summary)
+
     def test_not_running_is_reported_not_fatal(self):
         def boom(base, path, **params):
             raise OSError("refused")
