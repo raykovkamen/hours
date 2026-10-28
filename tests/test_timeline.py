@@ -63,10 +63,21 @@ class TimelineTest(unittest.TestCase):
         self.assertEqual(tl.longest_pause((time(11), time(15)), 30), (12 * 60 + 10, 40))
         self.assertIsNone(tl.longest_pause((time(11), time(15)), 60))
 
-    def test_pause_running_past_window_end_is_cut_at_window_end(self):
+    def test_end_of_day_is_not_a_break(self):
         tl = Timeline(DAY, TZ)
         tl.mark(at(9, 0), at(14, 0), "A", "x")
-        self.assertEqual(tl.longest_pause((time(11), time(15)), 30), (14 * 60, 60))
+        self.assertIsNone(tl.longest_pause((time(11), time(15)), 30))
+
+    def test_late_start_is_not_a_break(self):
+        tl = Timeline(DAY, TZ)
+        tl.mark(at(13, 0), at(17, 0), "A", "x")
+        self.assertIsNone(tl.longest_pause((time(11), time(15)), 30))
+
+    def test_pause_running_past_window_end_counts_in_full(self):
+        tl = Timeline(DAY, TZ)
+        tl.mark(at(9, 0), at(14, 30), "A", "x")
+        tl.mark(at(15, 45), at(18, 0), "A", "x")
+        self.assertEqual(tl.longest_pause((time(11), time(15)), 30), (14 * 60 + 30, 75))
 
 
 if __name__ == "__main__":

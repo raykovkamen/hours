@@ -48,7 +48,8 @@ They testify onto a one-minute grid. Then:
 - **Tracked time, rounded to 15 minutes.** Every client on the table gets at least one step. But a client
   with under 5 real minutes (`min_client_minutes`) is a passing question, not a consultation — it's noted
   under the table and its minutes are absorbed by the clients you actually worked for. We have *some* principles.
-- **A 1h break**, placed on your longest real pause between 11:00 and 15:00. Took two hours? We only need
+- **A 1h break, if you took one**: placed on your longest real pause (30+ min, with work before and after)
+  starting between 11:00 and 15:00. Worked straight through? No break row. Took two hours? We only need
   to know about one of them.
 - **Nothing padded, nothing capped — by default.** `min_hours` and `max_hours` in `config.toml` can bound
   the reported day if your firm bills that way. The footer always prints the real tracked time next to

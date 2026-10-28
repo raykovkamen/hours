@@ -119,14 +119,16 @@ class Timeline:
         return len(self.active)
 
     def longest_pause(self, window: tuple[time, time], min_minutes: int) -> tuple[int, int] | None:
-        """(start minute, length) of the longest inactive stretch inside the window, if any is long enough."""
+        """(start minute, length) of the longest real break starting inside the window, if any is long enough.
+
+        A break is an inactive stretch with work before and after it: the time before the first activity or
+        after the last one is the day not yet begun or already over, not a break.
+        """
         lo, hi = self.at(window[0]), self.at(window[1])
-        best, run = None, None
-        for m in range(lo, hi + 1):
-            if m in self.active or m == hi:
-                if run is not None and m - run >= min_minutes and (best is None or m - run > best[1]):
-                    best = (run, m - run)
-                run = None
-            elif run is None:
-                run = m
+        active = sorted(self.active)
+        best = None
+        for prev, nxt in zip(active, active[1:]):
+            start, length = prev + 1, nxt - prev - 1
+            if lo <= start < hi and length >= min_minutes and (best is None or length > best[1]):
+                best = (start, length)
         return best

@@ -63,10 +63,15 @@ class ScheduleTest(unittest.TestCase):
         rows = schedule(DAY, [("A", 4), ("B", 4)], Workday(), time(10, 0))
         self.assertEqual([r.key for r in rows], ["A", BREAK, "B"])
 
+    def test_no_break_row_without_a_real_pause(self):
+        rows = schedule(DAY, [("A", 20), ("B", 4)], Workday(), None)
+        keys = [(r.start.strftime("%H:%M"), r.end.strftime("%H:%M"), r.key) for r in rows]
+        self.assertEqual(keys, [("09:00", "14:00", "A"), ("14:00", "15:00", "B")])
+
 
 class BreakTimeTest(unittest.TestCase):
-    def test_default_when_no_pause(self):
-        self.assertEqual(break_time(None, Workday()), time(12, 0))
+    def test_no_break_when_no_pause(self):
+        self.assertIsNone(break_time(None, Workday()))
 
     def test_pause_snaps_to_step_and_never_runs_past_window(self):
         self.assertEqual(break_time((12 * 60 + 38, 45), Workday()), time(12, 45))

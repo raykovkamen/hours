@@ -24,7 +24,6 @@ class Workday:
     max_hours: float = 0.0  # 0 = no cap
     break_minutes: int = 60
     break_window: tuple[time, time] = (time(11, 0), time(15, 0))
-    break_default: time = time(12, 0)
     min_client_minutes: int = 5  # a client with less real time than this is a passing question, not a row
 
 
@@ -85,7 +84,6 @@ def load(path: Path | None = None) -> Config:
         max_hours=float(w.get("max_hours", 0)),
         break_minutes=int(w.get("break_minutes", 60)),
         break_window=tuple(_hhmm(x) for x in w.get("break_window", ["11:00", "15:00"])),
-        break_default=_hhmm(w.get("break_default", "12:00")),
         min_client_minutes=int(w.get("min_client_minutes", 5)),
     )
     roots = tuple(Path(os.path.expanduser(r)) for r in s.get("git_roots", []))

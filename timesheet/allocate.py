@@ -53,10 +53,16 @@ def allocate(per_key: dict[str, tuple[int, float]], slots: int, min_minutes: flo
     return [(k, units[k]) for k in order]
 
 
-def schedule(day: date, allocation: list[tuple[str, int]], workday: Workday, break_start: time) -> list[Row]:
-    """Lay the allocated slots out from the workday start, inserting the break at `break_start`."""
+def schedule(day: date, allocation: list[tuple[str, int]], workday: Workday, break_start: time | None) -> list[Row]:
+    """Lay the allocated slots out from the workday start, inserting the break at `break_start` (None = no break)."""
     step = timedelta(minutes=workday.step_minutes)
     t = datetime.combine(day, workday.start)
+    if break_start is None:
+        rows = []
+        for key, units in allocation:
+            rows.append(Row(t, t + step * units, key))
+            t += step * units
+        return rows
     brk = datetime.combine(day, break_start)
     brk_end = brk + timedelta(minutes=workday.break_minutes)
     rows: list[Row] = []
@@ -73,10 +79,10 @@ def schedule(day: date, allocation: list[tuple[str, int]], workday: Workday, bre
     return rows
 
 
-def break_time(pause: tuple[int, int] | None, workday: Workday) -> time:
-    """Snap the real pause to the step grid; without one, use the default. Never start after window end - break."""
+def break_time(pause: tuple[int, int] | None, workday: Workday) -> time | None:
+    """Snap the real pause to the step grid; without one there is no break. Never start after window end - break."""
     if pause is None:
-        return workday.break_default
+        return None
     start, _ = pause
     step = workday.step_minutes
     start = (start + step // 2) // step * step

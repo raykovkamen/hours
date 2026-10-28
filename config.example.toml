@@ -5,9 +5,8 @@ start = "09:00"          # the table always starts here
 step_minutes = 15        # billing step; every client gets at least one step
 min_hours = 0            # 0 = report tracked time as it is. A value (e.g. 6) pads the reported day up to it.
 max_hours = 0            # 0 = no cap. A value (e.g. 8) caps the reported day.
-break_minutes = 60       # shown as one Break row
-break_window = ["11:00", "15:00"]  # the break goes on the longest real pause (30+ min) in this window...
-break_default = "12:00"            # ...or here when there was none
+break_minutes = 60       # shown as one Break row, only on days you actually took one
+break_window = ["11:00", "15:00"]  # placed on your longest real pause (30+ min, work before and after) starting here
 min_client_minutes = 5   # a client with less real time than this is a passing question, not a row
 
 [sources]
