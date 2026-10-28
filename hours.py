@@ -3,6 +3,7 @@
     hours.py [DAY] [--all] [--json]                       print the day's table
     hours.py push [DAY] [--dry-run] [--assign SITE=TASK]  log the table into ClickUp as time entries
     hours.py add "Client call" 30m [--at 14:00] [DAY]     note time no source can see (a call, a meeting)
+    hours.py name 11:00[-11:30] Client [DAY]              name the ? row at that time (a meeting, a question)
     hours.py week [DAY]                                   the week containing DAY: hours, gaps, what is unpushed
     hours.py check                                        verify the installation (config, sources, ClickUp)
 
@@ -22,13 +23,13 @@ if sys.version_info < (3, 11):
     sys.exit("hours: Python 3.11 or newer is required")
 
 from timesheet import __version__  # noqa: E402
-from timesheet import allocate, config, push, report  # noqa: E402
+from timesheet import allocate, config, names, push, report  # noqa: E402
 from timesheet.clickup import ClickUp, ClickUpError  # noqa: E402
 from timesheet.sites import Sites  # noqa: E402
 from timesheet.sources import activitywatch, calendar_ics, claude_sessions, git_commits, manual  # noqa: E402
 from timesheet.timeline import Timeline, local_midnight  # noqa: E402
 
-COMMANDS = ("table", "push", "add", "week", "check")
+COMMANDS = ("table", "push", "add", "name", "week", "check")
 SOURCES = (activitywatch, claude_sessions, git_commits, calendar_ics, manual)
 
 
@@ -36,6 +37,7 @@ def build(cfg: config.Config, sites: Sites, day: date):
     """Collect every source for the day and lay the result out as table rows."""
     tl = Timeline(day)
     reports = [src.collect(cfg, sites, tl) for src in SOURCES]
+    reports.append(names.apply(cfg.log_dir, tl))  # before inheriting, so nearby minutes follow the named client
     tl.resolve_unplaced(cfg.sources.carry_minutes)
     slots = allocate.day_slots(tl.active_minutes(), cfg.workday)
     allocation = allocate.allocate(tl.per_key(), slots, cfg.workday.min_client_minutes)
@@ -118,6 +120,25 @@ def cmd_add(args, cfg, sites) -> int:
     print(f"Noted {minutes} min at {start:%H:%M} on {args.day}: {args.text}"
           + (f" -> {site}" if site else " -> no client matched (it will show as a ? row; add a sites.txt rule or name it)"))
     print(f"Edit or remove notes in {manual.notes_file(cfg.log_dir, args.day)}")
+    return 0
+
+
+def cmd_name(args, cfg, sites) -> int:
+    try:
+        names.add(cfg.log_dir, args.day, args.at, args.client)
+    except ValueError as e:
+        sys.exit(f"name: {e}")
+    tl = Timeline(args.day)
+    for src in SOURCES:
+        src.collect(cfg, sites, tl)
+    start, end = names.parse_span(args.at)
+    done = tl.rename(start, args.client, end)
+    if done:
+        for old, first, last in done:
+            print(f"Named {first // 60:02d}:{first % 60:02d}-{last // 60:02d}:{last % 60:02d} on {args.day}: {old} -> {args.client}")
+    else:
+        print(f"Saved, but no ? row is at {args.at} on {args.day} - check the time against the listing")
+    print(f"Edit or remove names in {names.names_file(cfg.log_dir, args.day)}")
     return 0
 
 
@@ -222,6 +243,9 @@ def main(argv: list[str] | None = None) -> int:
         ap.add_argument("text", help='what it was, naming the client: "Josera call about the ES store"')
         ap.add_argument("duration", help="30m, 1h, 1h30m")
         ap.add_argument("--at", metavar="HH:MM", help="start time (default: it just ended)")
+    if command == "name":
+        ap.add_argument("at", metavar="HH:MM[-HH:MM]", help="a minute inside the ? row (a span limits it to that time)")
+        ap.add_argument("client", help="the client, as the table names it: Shelly")
     if command != "check":
         ap.add_argument("day", nargs="?", type=date.fromisoformat, default=date.today(), help="YYYY-MM-DD (default: today)")
     if command == "table":
@@ -245,7 +269,7 @@ def main(argv: list[str] | None = None) -> int:
 
     cfg = config.load(args.config)
     sites = Sites(cfg.sites_file, cfg.sites_example)
-    commands = {"table": cmd_table, "push": cmd_push, "add": cmd_add, "week": cmd_week, "check": cmd_check}
+    commands = {"table": cmd_table, "push": cmd_push, "add": cmd_add, "name": cmd_name, "week": cmd_week, "check": cmd_check}
     return commands[command](args, cfg, sites)
 
 

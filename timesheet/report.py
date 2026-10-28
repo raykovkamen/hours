@@ -11,7 +11,7 @@ from .sources import Report
 from .timeline import Timeline
 
 
-LABELS = {"activitywatch": "ActivityWatch", "claude": "Claude Code", "git": "Git", "calendar": "Calendar", "manual": "Notes"}
+LABELS = {"activitywatch": "ActivityWatch", "claude": "Claude Code", "git": "Git", "calendar": "Calendar", "manual": "Notes", "names": "Named rows"}
 
 
 def hours(minutes: float) -> str:
@@ -45,7 +45,9 @@ def table(rows: list[Row], sites: Sites, tl: Timeline, cfg: Config, slots: int) 
             cells += [site] + ([task or "—"] if tasks else [])
         out.append("| " + " | ".join(cells) + " |")
     billed = sum(r.minutes for r in rows if r.key != BREAK)
-    out.append(f"| **Total** | **{hours(billed)}h** (+{hours(w.break_minutes)}h break) |" + (" | |" if tasks else " |"))
+    took = sum(r.minutes for r in rows if r.key == BREAK)
+    extra = f" (+{hours(took)}h break)" if took else ""
+    out.append(f"| **Total** | **{hours(billed)}h**{extra} |" + (" | |" if tasks else " |"))
 
     per_key = tl.per_key()
     real = ", ".join(f"{sites.split_key(k)[0]} {hours(v[1])}h" for k, v in sorted(per_key.items(), key=lambda kv: kv[1][0]))

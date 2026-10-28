@@ -116,6 +116,11 @@ Put it in `config.toml` as `calendar_ics = "https://…"` (or a path to an `.ics
 It's a secret: it goes in the config, never in a chat. Add your calendar address to `my_emails` if it
 isn't your git email, so the meetings you declined stay off the record.
 
+Workspace admin hid the secret address? The **public** address works too, if you make the calendar public
+as **free/busy only** (Access permissions → *Make available to public* → *See only free/busy*). Every
+meeting then arrives as `Busy` — a `? meeting` row that `/hours` names from the Gmail invitation (title or
+attendees' domains) with `hours.py name`. Never make the details public: the address is just your email.
+
 ### 🔑 The ClickUp token
 
 Settings → Apps → API Token in ClickUp. Put it in `config.toml` under `[clickup] token`, or export
@@ -133,6 +138,7 @@ In Claude Code:
 /hours 2026-10-20      for when the client asks about last Tuesday
 /hours push            put it on the record in ClickUp (we show you the plan first)
 /hours add "Josera call" 30m    the call no machine saw
+"the 11:00 meeting was Josera"  named for good (hours.py name), so the push takes it
 /hours week            the whole week: hours, gaps, what's not in ClickUp yet
 /hours check           is everything in order?
 ```
@@ -144,6 +150,7 @@ hours.py [DAY] [--all] [--json]
 hours.py push [DAY] [--dry-run] [--only Site] [--assign "Site=taskid"]
 hours.py push [DAY] --create [--title "Site=…"] [--prompt "Site=…"]   # create mode, see below
 hours.py add "TEXT" 30m [--at HH:MM] [DAY]
+hours.py name 11:00[-11:30] Client [DAY]   # name the ? row at that time; the table and push use it
 hours.py week [DAY]
 hours.py check
 ```
@@ -257,10 +264,12 @@ python -m unittest discover -s tests -t .
 
 `hours.py` is the front desk. `timesheet/` is the firm: `config.py`, `sites.py`, `timeline.py` (the grid),
 `allocate.py` (slots and the schedule), `report.py`, `clickup.py` (the API), `push.py` (the paperwork),
+`names.py` (names given to `?` rows),
 and `sources/` with one file per witness: `activitywatch.py`, `claude_sessions.py`, `git_commits.py`,
 `calendar_ics.py` (with its own recurrence engine — weekly standups, last-Friday retros, moved meetings),
 `manual.py`. Adding a witness — a calendar, a ticket system — is one module
-and one line. A hundred and four tests cover the lot, including a fake ClickUp, a fake ActivityWatch, a real temporary
+and one line. `store_names.py` reads new Shopify stores' names from their admin tabs so `/hours` can
+file them without asking. A hundred and sixteen tests cover the lot, including a fake ClickUp, a fake ActivityWatch, a real temporary
 git repo, a calendar full of awkward recurring meetings and the night the clocks go back.
 
 ---

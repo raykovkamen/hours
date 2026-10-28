@@ -88,6 +88,33 @@ class Timeline:
     def at(self, when: time) -> int:
         return when.hour * 60 + when.minute
 
+    def rename(self, minute: int, site: str, until: int | None = None) -> list[tuple[str, int, int]]:
+        """Give the `?` keys claiming `minute` to `site`: within [minute, until) when `until` is set, otherwise
+        over each key's unbroken run of minutes around `minute` (a meeting, a session). Returns (old key,
+        first minute, end minute) per renamed key."""
+        done = []
+        for old in sorted(k for k in self.claims.get(minute, ()) if k.startswith("?")):
+            if until is not None:
+                span = [m for m in range(minute, until) if old in self.claims.get(m, ())]
+            else:
+                lo = hi = minute
+                while old in self.claims.get(lo - 1, ()):
+                    lo -= 1
+                while old in self.claims.get(hi + 1, ()):
+                    hi += 1
+                span = list(range(lo, hi + 1))
+            for m in span:
+                self.claims[m].discard(old)
+                self.claims[m].add(site)
+            first, last = span[0], span[-1] + 1
+            for store in (self.evidence, self.initials):  # what was done there now belongs to the client
+                kept = []
+                for e in store.get(old, []):
+                    (store[site] if first <= self.minute(e[0]) < last else kept).append(e)
+                store[old] = kept
+            done.append((old, first, last))
+        return done
+
     # -- resolving -----------------------------------------------------------------
     def resolve_unplaced(self, carry_minutes: int) -> None:
         """Active minutes without a client inherit the nearest placed minute within `carry_minutes`.
