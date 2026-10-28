@@ -75,6 +75,9 @@ class Sites:
         The line is appended to sites.txt (when the user has one) so it can be edited later.
         """
         key = folder.lower()
+        known = next((site for pattern, site in self.rules if pattern == key), None)
+        if known:  # never write the same rule twice
+            return known
         words = [w for w in re.split(r"[-_.\s]+", key) if w]
         while len(words) > 1 and words[-1] in GENERIC_SUFFIXES:
             words.pop()

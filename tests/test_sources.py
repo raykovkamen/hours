@@ -110,6 +110,16 @@ class ClaudeSessionsTest(Fixture):
         self.assertIn("New Shop", self.tl.per_key())
         self.assertIn("new-shop = New Shop", (self.root / "sites.txt").read_text(encoding="utf-8"))
 
+    def test_project_under_a_container_folder_matches_without_relearning(self):
+        for _ in range(2):  # every run: the Claude folder is the container, the cwd the project
+            self.session("D--ERP", r"D:\ERP\acme-migration", [
+                (at(9, 0), "user", "hello"),
+                (at(9, 5), "assistant", "hi"),
+            ])
+            self.collect()
+        self.assertIn("Acme", self.tl.per_key())
+        self.assertNotIn("auto-added", (self.root / "sites.txt").read_text(encoding="utf-8"))
+
     def test_task_link_in_prompt_keys_the_row_to_that_task(self):
         self.session("D--PROJECTS-acme", r"D:\PROJECTS\acme", [
             (at(9, 0), "user", "work on https://app.clickup.com/t/86cxyz"),

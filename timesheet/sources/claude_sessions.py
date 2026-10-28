@@ -67,12 +67,14 @@ def _branch_task(cfg: Config, cwd: str | None) -> str | None:
 
 def _project_site(sites: Sites, folder: str, cwd: str | None) -> str | None:
     """The client a session folder stands for, learning new project folders on the way."""
-    site = sites.match(folder)
+    parts = [p for p in (cwd or "").replace("\\", "/").split("/") if p]
+    project = parts[-1] if len(parts) >= CONTAINER_DEPTH else None
+    # the Claude folder can be the container (D--MIGRATION) while the session worked in a project under it
+    site = sites.match(folder) or (sites.match(project) if project else None)
     if site:
         return site
-    parts = [p for p in (cwd or "").replace("\\", "/").split("/") if p]
-    if len(parts) >= CONTAINER_DEPTH:
-        return sites.auto_add(parts[-1])
+    if project:
+        return sites.auto_add(project)
     return None
 
 

@@ -269,7 +269,7 @@ and `sources/` with one file per witness: `activitywatch.py`, `claude_sessions.p
 `calendar_ics.py` (with its own recurrence engine — weekly standups, last-Friday retros, moved meetings),
 `manual.py`. Adding a witness — a calendar, a ticket system — is one module
 and one line. `store_names.py` reads new Shopify stores' names from their admin tabs so `/hours` can
-file them without asking. A hundred and sixteen tests cover the lot, including a fake ClickUp, a fake ActivityWatch, a real temporary
+file them without asking. A hundred and nineteen tests cover the lot, including a fake ClickUp, a fake ActivityWatch, a real temporary
 git repo, a calendar full of awkward recurring meetings and the night the clocks go back.
 
 ---

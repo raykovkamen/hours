@@ -40,6 +40,12 @@ class SitesTest(unittest.TestCase):
         self.assertIn("what-the-pink = What The Pink", text)
         self.assertIn("auto-added", text)
 
+    def test_auto_add_writes_a_folder_only_once(self):
+        self.sites.auto_add("brava-migration")
+        self.assertEqual(self.sites.auto_add("brava-migration"), "Brava")
+        self.assertEqual(Sites(self.path).auto_add("brava-migration"), "Brava")
+        self.assertEqual(self.path.read_text(encoding="utf-8").count("brava-migration ="), 1)
+
     def test_falls_back_to_example_without_writing(self):
         example = Path(self.dir.name) / "sites.example.txt"
         example.write_text("demo = Demo\n", encoding="utf-8")
