@@ -237,7 +237,7 @@ A `pattern` is a case-insensitive substring tried against folder names, reposito
 and prompts. First match wins, so specific lines go above generic ones. Add store domains and admin page
 titles (`acme.com = Acme`) so browser work gets placed. Unknown project folder? We name it after the folder
 (`what-the-pink` → `What The Pink`), append the line once, and let you fix the spelling. A project under a
-container (`D:\MIGRATIONrava-migration`) is matched by its own name too. New Shopify stores need no
+container (`D:\MIGRATION\brava-migration`) is matched by its own name too. New Shopify stores need no
 line from you: `/hours` reads the store name from the admin tab (`store_names.py`) and files the handle under
 the right client.
 
