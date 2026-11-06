@@ -32,3 +32,4 @@ task_status = "in progress"
 task_tag = "created by hours"   # tag on every task the push creates ("" = none)
 prompt_field = "Initial prompt"   # custom field filled with the first prompt of the work ("" = off)
 task_name = "{title}"   # also {site} and {date}; {title}: from --title, else the day's commits, else the date
+parent_name = "{site} – hours"  # one parent task per client, created once; every daily task is a subtask of it ("" = flat)

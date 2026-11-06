@@ -148,7 +148,7 @@ Or, if you prefer to do things yourself (respect):
 ```
 hours.py [DAY] [--all] [--json]
 hours.py push [DAY] [--dry-run] [--only Site] [--assign "Site=taskid"]
-hours.py push [DAY] --create [--title "Site=…"] [--prompt "Site=…"]   # create mode, see below
+hours.py push [DAY] --create [--title "Site=…"] [--desc "Site=…"] [--prompt "Site=…"]   # create mode, see below
 hours.py add "TEXT" 30m [--at HH:MM] [DAY]
 hours.py name 11:00[-11:30] Client [DAY]   # name the ? row at that time; the table and push use it
 hours.py week [DAY]
@@ -190,14 +190,17 @@ your branch name (`feature/86cabc123-header`) and you'll never think about it ag
 
 ### Mode `create` — open a fresh file every day
 
-We don't touch existing tasks at all. Each client gets **one new task per day** in its list, and the
-day's time goes there:
+We don't touch existing tasks at all. Each client gets **one new task per day** in its list, filed as a
+**subtask** of the client's parent task, and the day's time goes on the daily one:
 
 - **Name:** what you did, nothing else — `Checkout VAT field and ERP SKU sync`. With `/hours push`, Claude
   reads the day's commits, your prompts and its own replies — the replies say what actually got done —
   and writes it; you approve it in the dry run. By hand: `--title
   "Acme=…"`, or we take your first commit subject, or the date if you didn't commit.
-- **Status** *in progress*, **assigned** to you, **no description**, and the tag **`created by hours`** — so
+- **Description:** what was done, as a few Markdown bullets — with `/hours push`, Claude writes it from the
+  day's evidence (the same material as the title) and passes it as `--desc "Acme=…"`; pushing again later
+  with a new `--desc` replaces it on today's task. Without `--desc` the task has no description.
+- **Status** *in progress*, **assigned** to you, and the tag **`created by hours`** — so
   anyone can see (and filter) which tasks the skill opened. `task_tag = ""` if you'd rather it didn't sign its work.
 - **Initial prompt** (the custom field, if the list has it): the request that started the work — the first
   prompt of the Claude session behind it, exactly as you typed or pasted it. `--prompt "Acme=…"` to
@@ -207,6 +210,16 @@ day's time goes there:
 - **Push again later** and we find the same task — even if you renamed it. We look in `logs/` first; lost
   the folder, or pushing from your other laptop? We find it through today's `hours: <client>` entries
   instead. Delete it in ClickUp, and the next push opens a fresh one.
+- **One line per client on the board, not one per day.** The first push for a client opens its **parent
+  task** — `Acme – hours` (`parent_name`, with `{site}` and `{date}`), *in progress*, assigned to you,
+  tagged — and every daily task is a subtask of it. We remember it as `parent:<id>` on the client's line in
+  `sites.txt` (written for you after the real push). Lost that line? We find the parent again by its name and
+  tag in the list. Deleted it in ClickUp, or moved it to another list? The next push opens a new parent.
+  Rather have the dailies under a task of your own? Put its id in `parent:` (a top-level task in the same
+  list). `parent_name = ""` keeps the daily tasks flat, the old way.
+- **Old flat daily tasks?** `hours.py adopt --dry-run` lists the top-level tasks tagged `created by hours` in
+  every client's list and the parent each would move under; `hours.py adopt` moves them (creating parents
+  where a client has none yet). `--only Acme` for one client.
 
 ### Either way
 
@@ -230,7 +243,7 @@ day's time goes there:
 ## 🗂️ `sites.txt` — the client list
 
 ```
-pattern = Site Name | clickup_task_id list:clickup_list_id    # both optional
+pattern = Site Name | clickup_task_id list:clickup_list_id parent:clickup_task_id    # all optional
 ```
 
 A `pattern` is a case-insensitive substring tried against folder names, repository names, window titles
@@ -253,7 +266,7 @@ the right client.
   counsel, not the defendant.
 - Everything runs locally and reads only your own data: session logs, repositories, ActivityWatch (titles,
   URLs, VS Code projects), your calendar feed, your notes. None of it is uploaded. What reaches ClickUp: the time entry (task,
-  start, duration, `hours: <client>`) and, in create mode, the new task's title and its **Initial prompt**
+  start, duration, `hours: <client>`) and, in create mode, the parent task's name, the new task's title and its **Initial prompt**
   field — your first prompt for that work, pasted client text included. Anyone who can see the task can
   read it. Set `prompt_field = ""` if that's more than you want on the record.
 - No scheduled jobs, no cron, no hooks. This firm only works when you call.
@@ -273,7 +286,7 @@ and `sources/` with one file per witness: `activitywatch.py`, `claude_sessions.p
 `calendar_ics.py` (with its own recurrence engine — weekly standups, last-Friday retros, moved meetings),
 `manual.py`. Adding a witness — a calendar, a ticket system — is one module
 and one line. `store_names.py` reads new Shopify stores' names from their admin tabs so `/hours` can
-file them without asking. A hundred and twenty tests cover the lot, including a fake ClickUp, a fake ActivityWatch, a real temporary
+file them without asking. A hundred and thirty tests cover the lot, including a fake ClickUp, a fake ActivityWatch, a real temporary
 git repo, a calendar full of awkward recurring meetings and the night the clocks go back.
 
 ---

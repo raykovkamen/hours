@@ -80,7 +80,7 @@ class BreakTimeTest(unittest.TestCase):
 
 
 class TableColumnTest(unittest.TestCase):
-    def test_task_column_only_outside_create_mode(self):
+    def test_task_column_per_mode(self):
         import tempfile
         from datetime import datetime, timezone
         from pathlib import Path
@@ -99,8 +99,11 @@ class TableColumnTest(unittest.TestCase):
             created = report.table(rows, sites, tl, Config(clickup=ClickUpConfig(mode="create")), 4)
             self.assertIn("| ClickUp task |", existing)
             self.assertIn("| Acme | T1 |", existing)
-            self.assertNotIn("ClickUp task", created)
-            self.assertIn("| 09:00–10:00 | 1 | Acme |", created)
+            self.assertIn("| ClickUp task name |", created)
+            self.assertIn("| 09:00–10:00 | 1 | Acme | 2026-10-27 |", created)  # no commits, no --title: the date
+            titled = report.table(rows, sites, tl, Config(clickup=ClickUpConfig(mode="create")), 4,
+                                  {"Acme": "Checkout VAT fixes"})
+            self.assertIn("| Acme | Checkout VAT fixes |", titled)
 
 
 if __name__ == "__main__":

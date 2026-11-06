@@ -4,9 +4,10 @@ from __future__ import annotations
 import json
 from datetime import date
 
+from . import push
 from .allocate import BREAK, Row
 from .config import Config
-from .sites import Sites, is_unnamed
+from .sites import UNKNOWN, Sites, is_unnamed
 from .sources import Report
 from .timeline import Timeline
 
@@ -31,23 +32,31 @@ def listing(day: date, reports: list[Report], show_all: bool) -> str:
     return "\n".join(out)
 
 
-def table(rows: list[Row], sites: Sites, tl: Timeline, cfg: Config, slots: int) -> str:
+def table(rows: list[Row], sites: Sites, tl: Timeline, cfg: Config, slots: int,
+          titles: dict[str, str] | None = None, mode: str = "") -> str:
     w = cfg.workday
-    # In create mode the push makes the tasks itself, so a task column would always be empty: leave it out.
-    tasks = cfg.clickup.mode != "create"
-    out = ["| Time | Hours | Site | ClickUp task |", "|---|---|---|---|"] if tasks else ["| Time | Hours | Site |", "|---|---|---|"]
+    # Existing mode shows the task id each row goes to; create mode the name the push gives the new daily task
+    # (--title, else the day's first commit subject, else the date). A task an earlier push created keeps its name.
+    create = (mode or cfg.clickup.mode) == "create"
+    out = [f"| Time | Hours | Site | {'ClickUp task name' if create else 'ClickUp task'} |", "|---|---|---|---|"]
     for r in rows:
         cells = [f"{r.start:%H:%M}–{r.end:%H:%M}", hours(r.minutes)]
         if r.key == BREAK:
-            cells += ["Break"] + ([""] if tasks else [])
+            cells += ["Break", ""]
         else:
             site, task = sites.split_key(r.key)
-            cells += [site] + ([task or "—"] if tasks else [])
+            if not create:
+                cells += [site, task or "—"]
+            elif is_unnamed(r.key) or site == UNKNOWN:
+                cells += [site, "—"]
+            else:
+                name = push.daily_task_name(tl.day, site, cfg.clickup.task_name, titles, tl.evidence_for)
+                cells += [site, name.replace("|", "/")]
         out.append("| " + " | ".join(cells) + " |")
     billed = sum(r.minutes for r in rows if r.key != BREAK)
     took = sum(r.minutes for r in rows if r.key == BREAK)
     extra = f" (+{hours(took)}h break)" if took else ""
-    out.append(f"| **Total** | **{hours(billed)}h**{extra} |" + (" | |" if tasks else " |"))
+    out.append(f"| **Total** | **{hours(billed)}h**{extra} | | |")
 
     per_key = tl.per_key()
     real = ", ".join(f"{sites.split_key(k)[0]} {hours(v[1])}h" for k, v in sorted(per_key.items(), key=lambda kv: kv[1][0]))

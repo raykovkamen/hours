@@ -8,6 +8,10 @@ Two modes (`[clickup] mode` in config.toml):
   "in progress" and assigned to you; the day's time goes on it. A later push finds that task again - from the
   local push log, or, when the log is missing (other machine, deleted folder), from the day's entries this
   tool wrote. Rows whose client has no list block the push.
+  The daily tasks are subtasks of one parent task per client (`[clickup] parent_name`, e.g. "Acme – hours"),
+  so a board shows one line per client, not one per day. The parent is created once, remembered as
+  `parent:<id>` on the client's line in sites.txt, and found again by its name and tag in the list when that
+  line is missing. `parent_name = ""` keeps the daily tasks flat.
 
 Either way the push reconciles each task with the table:
 
@@ -32,6 +36,7 @@ from .clickup import ClickUp, ClickUpError, Entry, Task
 from .sites import UNKNOWN, Sites, is_unnamed
 
 MAX_PROMPT = 5000  # characters kept for the "Initial prompt" field
+MAX_DESCRIPTION = 4000  # characters kept for a daily task's description
 DESCRIPTION = "hours"  # entries this tool wrote carry "hours: <client>", so they can be told apart in ClickUp
 
 
@@ -52,8 +57,13 @@ class Action:
     list_id: str = ""  # create mode
     task_name: str = ""  # create mode
     created: bool = False  # create mode: the task was created by this run (or would be, in a dry run)
+    parent: Task | None = None  # create mode: the client's parent task the daily task nests under
+    parent_name: str = ""  # create mode: name of the parent task ("" = flat daily tasks)
+    parent_created: bool = False  # create mode: the parent task was created by this run (or would be)
     prompt: str = ""  # create mode: value for the "Initial prompt" field of a new task
     prompt_set: bool = False  # the field existed on the list and was filled
+    description: str = ""  # create mode: Markdown summary of the day's work for the task (--desc)
+    described: bool = False  # create mode: the description was set on a task that already existed
     shrink: list[tuple[Entry, int]] = field(default_factory=list)  # (entry, new minutes; 0 = delete)
     by_hand_excess: int = 0  # minutes logged by hand beyond the table - reported, never changed
 
@@ -141,24 +151,34 @@ def known_task(log_dir: Path, site: str, day: date) -> str:
 
 
 def auto_title(evidence: list[tuple[datetime, str, str]], limit: int = 70) -> str:
-    """A title from the day's commits: the first real one, plus how many more. Empty when there were none."""
+    """A title from the day's commits: the first real one. Empty when there were none."""
     commits = [text for _, kind, text in evidence if kind == "commit" and not text.lower().startswith("merge ")]
     if not commits:
         return ""
-    title = commits[0] if len(commits[0]) <= limit else commits[0][:limit - 1].rstrip() + "…"
-    return f"{title} (+{len(commits) - 1} more)" if len(commits) > 1 else title
+    return commits[0] if len(commits[0]) <= limit else commits[0][:limit - 1].rstrip() + "…"
+
+
+def daily_task_name(day: date, site: str, task_name: str = "{title}", titles: dict[str, str] | None = None,
+                    evidence=None) -> str:
+    """Create mode: the name of the client's daily task - its --title, else from the day's commits, else the date."""
+    ev = evidence(site) if evidence else []
+    title = (titles or {}).get(site) or auto_title(ev) or day.isoformat()
+    return task_name.format(site=site, date=day.isoformat(), title=title)
 
 
 def plan(day: date, rows: list[Row], sites: Sites, logged: list[Entry], assign: dict[str, str],
          mode: str = "existing", default_list: str = "", task_name: str = "{title}",
-         titles: dict[str, str] | None = None, evidence=None, prompts=None) -> Plan:
+         titles: dict[str, str] | None = None, evidence=None, prompts=None,
+         descriptions: dict[str, str] | None = None) -> Plan:
     """Decide what to post. `assign` maps a site to a task id (existing mode) or `list:ID` (create mode).
 
     Create mode only: `titles` (site -> title) override the automatic title from the day's commits,
-    `evidence` (site -> [(time, kind, text)]) feeds that automatic title. Daily tasks have no description.
+    `evidence` (site -> [(time, kind, text)]) feeds that automatic title. `descriptions` (site -> Markdown)
+    is written as the daily task's description; without one the task has none.
     `prompts` (site -> text) is the work's initial prompt, stored in the task's "Initial prompt" field.
     """
     titles = titles or {}
+    descriptions = descriptions or {}
     prompts = prompts or (lambda site: "")
     evidence = evidence or (lambda site: [])
     p = Plan(day, mode, logged=list(logged))
@@ -192,11 +212,10 @@ def plan(day: date, rows: list[Row], sites: Sites, logged: list[Entry], assign: 
     for key, minutes in totals.items():
         start, extra = first[key]
         if mode == "create":
-            ev = evidence(key)
-            title = titles.get(key) or auto_title(ev) or day.isoformat()
-            name = task_name.format(site=key, date=day.isoformat(), title=title)
+            name = daily_task_name(day, key, task_name, titles, evidence)
             p.actions.append(Action("", key, start, minutes, minutes, 0, list_id=extra, task_name=name,
-                                    prompt=prompts(key)[:MAX_PROMPT]))
+                                    prompt=prompts(key)[:MAX_PROMPT],
+                                    description=descriptions.get(key, "").strip()[:MAX_DESCRIPTION]))
         else:
             a = Action(key, extra, start, minutes, minutes, 0)
             reconcile(p, a)
@@ -222,33 +241,82 @@ def _find_daily_task(p: Plan, a: Action, api: ClickUp, log_dir: Path) -> Task | 
     return None
 
 
+def _find_parent(a: Action, api: ClickUp, sites: Sites | None, tag: str) -> Task | None:
+    """The client's parent task: the one sites.txt names (if it still exists, top-level, in the client's list),
+    else the oldest top-level task of that name tagged by this tool in the list (sites.txt line lost)."""
+    pid = sites.parents.get(a.site, "") if sites else ""
+    if pid:
+        try:
+            t = api.task(pid)
+            if not t.parent and (t.list_id == a.list_id or not t.list_id):
+                return t
+        except ClickUpError:
+            pass  # deleted in ClickUp since
+    if tag:
+        for t in api.tagged_tasks(a.list_id, tag):
+            if t.name.strip().lower() == a.parent_name.strip().lower():
+                return t
+    return None
+
+
+def _resolve_parent(a: Action, api: ClickUp, sites: Sites | None, status: str, me: int | None, dry_run: bool,
+                    tag: str, parents: dict[str, Task]) -> None:
+    """Find or create the client's parent task (once per push per client) and remember it in sites.txt."""
+    if a.site in parents:
+        a.parent = parents[a.site]
+        return
+    found = _find_parent(a, api, sites, tag)
+    if found is None:
+        a.parent_created = True
+        if dry_run:
+            return
+        found = api.create_task(a.list_id, a.parent_name, status, me, None, tag)
+    a.parent = parents[a.site] = found
+    if not dry_run and sites and sites.parents.get(a.site) != found.id:
+        sites.set_parent(a.site, found.id)
+
+
 def _resolve_daily_task(p: Plan, a: Action, api: ClickUp, status: str, me: int | None, dry_run: bool,
-                        log_dir: Path, prompt_field: str = "", tag: str = "") -> None:
-    """Reuse the task an earlier push created today (if it still exists in ClickUp), else create one."""
+                        log_dir: Path, prompt_field: str = "", tag: str = "", sites: Sites | None = None,
+                        parents: dict[str, Task] | None = None) -> None:
+    """Reuse the task an earlier push created today (if it still exists in ClickUp), else create one
+    as a subtask of the client's parent task (when `a.parent_name` is set)."""
     found = _find_daily_task(p, a, api, log_dir)
     if found:
         a.task, a.task_id = found, found.id
         reconcile(p, a)
+        if a.description:  # a later push with --desc updates the description of today's task
+            a.described = True
+            if not dry_run:
+                api.set_description(a.task_id, a.description)
         return
+    if a.parent_name:
+        _resolve_parent(a, api, sites, status, me, dry_run, tag, parents if parents is not None else {})
     fid = api.field_id(a.list_id, prompt_field) if (prompt_field and a.prompt) else ""
     fields = [{"id": fid, "value": a.prompt}] if fid else None
     a.created, a.prompt_set = True, bool(fid)
     if not dry_run:
-        a.task = api.create_task(a.list_id, a.task_name, status, me, fields, tag)
+        a.task = api.create_task(a.list_id, a.task_name, status, me, fields, tag, a.parent.id if a.parent else "",
+                                 a.description)
         a.task_id = a.task.id
 
 
 def execute(p: Plan, api: ClickUp, billable: bool, dry_run: bool, log_dir: Path, status: str = "in progress",
-            prompt_field: str = "", tag: str = "") -> None:
-    """Validate (or find/create) every task, then post and shrink. Appends a JSON-lines log, dry runs included."""
+            prompt_field: str = "", tag: str = "", sites: Sites | None = None, parent_name: str = "") -> None:
+    """Validate (or find/create) every task, then post and shrink. Appends a JSON-lines log, dry runs included.
+
+    Create mode: `parent_name` ("{site} – hours"; {site} and {date} are filled) is the per-client parent task
+    every daily task is a subtask of; "" keeps them flat. `sites` remembers the parent (`parent:<id>`)."""
     if p.blocked:
         return
     p.tag = tag
     if p.mode == "create":
         me = api.user().get("id")
+        parents: dict[str, Task] = {}
         for a in p.actions:
+            a.parent_name = parent_name.format(site=a.site, date=p.day.isoformat()).strip()
             try:
-                _resolve_daily_task(p, a, api, status, me, dry_run, log_dir, prompt_field, tag)
+                _resolve_daily_task(p, a, api, status, me, dry_run, log_dir, prompt_field, tag, sites, parents)
             except ClickUpError as e:
                 p.blocked.append(f"{a.site}: list {a.list_id} - {e}")
     else:
@@ -265,7 +333,8 @@ def execute(p: Plan, api: ClickUp, billable: bool, dry_run: bool, log_dir: Path,
         def record(a: Action, **extra) -> None:
             f.write(json.dumps({"at": datetime.now().isoformat(timespec="seconds"), "dry_run": dry_run, "mode": p.mode,
                                 "task": a.task_id, "task_name": a.task.name if a.task else a.task_name,
-                                "created": a.created, "site": a.site, **extra}, ensure_ascii=False) + "\n")
+                                "created": a.created, "site": a.site, "parent": a.parent.id if a.parent else "",
+                                **extra}, ensure_ascii=False) + "\n")
             f.flush()  # a failure halfway leaves an accurate log of what was done
 
         for a in p.to_post:
@@ -286,7 +355,27 @@ def _name(a: Action) -> str:
     if a.task:
         where = f" ({a.task.location})" if a.task.location else ""
         return f"{a.task.name}{where} [{a.task_id}]"
+    if a.parent_name:
+        return f"{a.task_name} (new subtask of \"{a.parent_name}\" in list {a.list_id})"
     return f"{a.task_name} (new task in list {a.list_id})"
+
+
+def _short(text: str, limit: int = 100) -> str:
+    one = " ".join(text.split())
+    return one[:limit] + ("…" if len(one) > limit else "")
+
+
+def _parent_line(a: Action, dry_run: bool) -> str:
+    """How the daily task was filed under the client's parent task, for the report."""
+    if not a.parent_name:
+        return ""
+    if a.parent:
+        if a.parent_created:
+            return f"parent task \"{a.parent.name}\" [{a.parent.id}] created, remembered as parent:{a.parent.id} in sites.txt"
+        return f"subtask of \"{a.parent.name}\" [{a.parent.id}]"
+    if a.parent_created and dry_run:
+        return f"parent task \"{a.parent_name}\" would be created first (list {a.list_id})"
+    return ""
 
 
 def render(p: Plan, dry_run: bool) -> str:
@@ -302,9 +391,18 @@ def render(p: Plan, dry_run: bool) -> str:
         out.append(f"{'Would create' if dry_run else 'Created'} {len(created)} task(s), status \"in progress\", assigned to you{tagged}:")
         for a in created:
             out.append(f"  - {_name(a)}")
+            parent = _parent_line(a, dry_run)
+            if parent:
+                out.append(f"      {parent}")
+            if a.description:
+                out.append(f"      Description: {_short(a.description)}")
             if a.prompt_set:
                 first = " ".join(a.prompt.split())
                 out.append(f"      Initial prompt: {first[:100]}{'…' if len(first) > 100 else ''}")
+    described = [a for a in p.actions if a.described]
+    if described:
+        out.append(f"{'Would set' if dry_run else 'Set'} the description of {len(described)} existing task(s):")
+        out += [f"  - {_name(a)}: {_short(a.description)}" for a in described]
     if posted:
         out.append(f"{'Would post' if dry_run else 'Posted'} {len(posted)} entr{'y' if len(posted) == 1 else 'ies'}:")
         for a in posted:
@@ -326,9 +424,45 @@ def render(p: Plan, dry_run: bool) -> str:
     if settled:
         out.append("Already logged (nothing to change):")
         out += [f"  - {_name(a)}: {a.table_minutes} min" for a in settled]
-    if not posted and not shrunk and not settled and not by_hand:
+    if not posted and not shrunk and not settled and not by_hand and not described:
         out.append("Nothing to post.")
     return "\n".join(out)
+
+
+def adopt(sites: Sites, api: ClickUp, dry_run: bool, status: str = "in progress", tag: str = "",
+          parent_name: str = "{site} – hours", only: set[str] | None = None) -> list[str]:
+    """File the daily tasks this tool created earlier (top-level, tagged) as subtasks of each client's parent
+    task, creating the parent where a client has none yet. Returns one report line per client."""
+    out = []
+    if not tag or not parent_name:
+        return ["adopt needs [clickup] task_tag and parent_name - without them earlier tasks cannot be told apart"]
+    me = api.user().get("id")
+    for site, list_id in sites.lists.items():
+        if only and site.lower() not in only:
+            continue
+        name = parent_name.format(site=site, date=date.today().isoformat()).strip()
+        a = Action("", site, datetime.now(), 0, 0, 0, list_id=list_id)
+        a.parent_name = name
+        try:
+            parent = _find_parent(a, api, sites, tag)
+            orphans = [t for t in api.tagged_tasks(list_id, tag)
+                       if (parent is None or t.id != parent.id) and t.name.strip().lower() != name.lower()]
+            if not orphans:
+                out.append(f"{site}: nothing to move")
+                continue
+            if parent is None and not dry_run:
+                parent = api.create_task(list_id, name, status, me, None, tag)
+            if parent and sites.parents.get(site) != parent.id and not dry_run:
+                sites.set_parent(site, parent.id)
+            where = f'"{parent.name}" [{parent.id}]' if parent else f'"{name}" (would be created in list {list_id})'
+            for t in orphans:
+                if not dry_run:
+                    api.move_under(t.id, parent.id)
+            moved = "; ".join(f"{t.name[:50]} [{t.id}]" for t in orphans)
+            out.append(f"{site}: {'would move' if dry_run else 'moved'} {len(orphans)} task(s) under {where}: {moved}")
+        except ClickUpError as e:
+            out.append(f"{site}: list {list_id} - {e}")
+    return out
 
 
 def token_from(cfg_token: str) -> str:

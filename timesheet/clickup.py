@@ -33,6 +33,11 @@ class Task:
     folder_name: str
     list_id: str = ""
     created: datetime | None = None
+    parent: str = ""  # id of the parent task when this one is a subtask
+
+    @property
+    def created_key(self) -> float:
+        return self.created.timestamp() if self.created else float("inf")
 
     @property
     def location(self) -> str:
@@ -107,14 +112,25 @@ class ClickUp:
         return self.team_id
 
     # -- tasks ---------------------------------------------------------------------
-    def task(self, task_id: str) -> Task:
-        t = self._call("GET", f"task/{task_id}")
+    @staticmethod
+    def _task(t: dict) -> Task:
         status = t.get("status") or {}
         created = t.get("date_created")
         return Task(t["id"], t.get("name", ""), status.get("status", ""),
                     (t.get("list") or {}).get("name", ""), (t.get("folder") or {}).get("name", ""),
                     str((t.get("list") or {}).get("id", "")),
-                    datetime.fromtimestamp(int(created) / 1000).astimezone() if created else None)
+                    datetime.fromtimestamp(int(created) / 1000).astimezone() if created else None,
+                    str(t.get("parent") or ""))
+
+    def task(self, task_id: str) -> Task:
+        return self._task(self._call("GET", f"task/{task_id}"))
+
+    def tagged_tasks(self, list_id: str, tag: str) -> list[Task]:
+        """Top-level tasks in the list that carry the tag, oldest first, closed ones included."""
+        data = self._call("GET", f"list/{list_id}/task",
+                          {"tags[]": tag, "include_closed": "true", "order_by": "created", "reverse": "false"})
+        tasks = [self._task(t) for t in data.get("tasks", [])]
+        return sorted((t for t in tasks if not t.parent), key=lambda t: t.created_key)
 
     def field_id(self, list_id: str, name: str) -> str:
         """Id of the custom field called `name` (case-insensitive) available on the list, or ""."""
@@ -128,9 +144,15 @@ class ClickUp:
         self._call("POST", f"task/{task_id}/tag/{urllib.parse.quote(tag)}")
 
     def create_task(self, list_id: str, name: str, status: str, assignee_id: int | None,
-                    custom_fields: list[dict] | None = None, tag: str = "") -> Task:
-        """Create a task; when the list has no such status, it is created with the list's default status."""
+                    custom_fields: list[dict] | None = None, tag: str = "", parent: str = "",
+                    description: str = "") -> Task:
+        """Create a task (a subtask of `parent`, which must be a top-level task in the same list, when given);
+        when the list has no such status, it is created with the list's default status. `description` is Markdown."""
         body: dict = {"name": name}
+        if parent:
+            body["parent"] = parent
+        if description:
+            body["markdown_description"] = description
         if custom_fields:
             body["custom_fields"] = custom_fields
         if assignee_id:
@@ -144,6 +166,14 @@ class ClickUp:
         if tag:
             self.add_tag(t["id"], tag)
         return self.task(t["id"])
+
+    def set_description(self, task_id: str, description: str) -> None:
+        """Replace a task's description (Markdown)."""
+        self._call("PUT", f"task/{task_id}", body={"markdown_content": description})
+
+    def move_under(self, task_id: str, parent_id: str) -> None:
+        """Make an existing top-level task a subtask of `parent_id` (same list)."""
+        self._call("PUT", f"task/{task_id}", body={"parent": parent_id})
 
     # -- time entries --------------------------------------------------------------
     def entries(self, day_start: datetime, day_end: datetime) -> list[Entry]:

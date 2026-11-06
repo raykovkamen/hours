@@ -5,6 +5,7 @@
     hours.py add "Client call" 30m [--at 14:00] [DAY]     note time no source can see (a call, a meeting)
     hours.py name 11:00[-11:30] Client [DAY]              name the ? row at that time (a meeting, a question)
     hours.py week [DAY]                                   the week containing DAY: hours, gaps, what is unpushed
+    hours.py adopt [--dry-run] [--only SITE]              file earlier daily tasks as subtasks of each client's parent task
     hours.py check                                        verify the installation (config, sources, ClickUp)
 
 DAY is YYYY-MM-DD and defaults to today. Run with `py -3 -I` (Windows) or `python3 -I` (macOS/Linux).
@@ -29,7 +30,7 @@ from timesheet.sites import Sites  # noqa: E402
 from timesheet.sources import activitywatch, calendar_ics, claude_sessions, git_commits, manual  # noqa: E402
 from timesheet.timeline import Timeline, local_midnight  # noqa: E402
 
-COMMANDS = ("table", "push", "add", "name", "week", "check")
+COMMANDS = ("table", "push", "add", "name", "week", "check", "adopt")
 SOURCES = (activitywatch, claude_sessions, git_commits, calendar_ics, manual)
 
 
@@ -55,7 +56,7 @@ def cmd_table(args, cfg, sites) -> int:
     if not rows:
         print("No activity found for this day.")
         return 0
-    print(report.table(rows, sites, tl, cfg, slots))
+    print(report.table(rows, sites, tl, cfg, slots, pairs(args.title, "--title")))
     return 0
 
 
@@ -78,7 +79,7 @@ def cmd_push(args, cfg, sites) -> int:
             sys.exit(f"--assign expects SITE=TASK, got {item!r}")
         assign[site.strip()] = task.strip()
     tl, reports, rows, slots = build(cfg, sites, args.day)
-    print(report.table(rows, sites, tl, cfg, slots))
+    print(report.table(rows, sites, tl, cfg, slots, pairs(args.title, "--title"), "create" if args.create else ""))
     print()
     if args.only:
         wanted = {s.strip().lower() for s in args.only}
@@ -93,9 +94,10 @@ def cmd_push(args, cfg, sites) -> int:
         titles = pairs(args.title, "--title")
         prompt_over = pairs(args.prompt, "--prompt")
         p = push.plan(args.day, rows, sites, logged, assign, mode, cfg.clickup.list_id, cfg.clickup.task_name,
-                      titles, tl.evidence_for, lambda site: prompt_over.get(site) or tl.initial_prompt(site))
+                      titles, tl.evidence_for, lambda site: prompt_over.get(site) or tl.initial_prompt(site),
+                      pairs(args.desc, "--desc"))
         push.execute(p, api, args.billable or cfg.clickup.billable, args.dry_run, cfg.log_dir, cfg.clickup.task_status,
-                     cfg.clickup.prompt_field, cfg.clickup.task_tag)
+                     cfg.clickup.prompt_field, cfg.clickup.task_tag, sites, cfg.clickup.parent_name)
     except ClickUpError as e:
         print(f"Push failed: {e}")
         return 2
@@ -188,6 +190,18 @@ def cmd_week(args, cfg, sites) -> int:
     return 0
 
 
+def cmd_adopt(args, cfg, sites) -> int:
+    try:
+        api = ClickUp(push.token_from(cfg.clickup.token), cfg.clickup.team_id)
+        lines = push.adopt(sites, api, args.dry_run, cfg.clickup.task_status, cfg.clickup.task_tag,
+                           cfg.clickup.parent_name, {s.strip().lower() for s in args.only} if args.only else None)
+    except ClickUpError as e:
+        print(f"Adopt failed: {e}")
+        return 2
+    print("\n".join(lines) if lines else "No client has a list: in sites.txt - nothing to adopt.")
+    return 0
+
+
 def cmd_check(args, cfg, sites) -> int:
     ok = True
 
@@ -246,20 +260,27 @@ def main(argv: list[str] | None = None) -> int:
     if command == "name":
         ap.add_argument("at", metavar="HH:MM[-HH:MM]", help="a minute inside the ? row (a span limits it to that time)")
         ap.add_argument("client", help="the client, as the table names it: Shelly")
-    if command != "check":
+    if command not in ("check", "adopt"):
         ap.add_argument("day", nargs="?", type=date.fromisoformat, default=date.today(), help="YYYY-MM-DD (default: today)")
+    if command == "adopt":
+        ap.add_argument("--dry-run", action="store_true", help="show which tasks would move, change nothing")
+        ap.add_argument("--only", action="append", metavar="SITE", help="adopt only this client's tasks (repeatable)")
     if command == "table":
         ap.add_argument("--all", action="store_true", help="list every session and commit, not only the unnamed ones")
         ap.add_argument("--json", action="store_true", help="emit the rows as JSON")
+    if command in ("table", "push"):
+        ap.add_argument("--title", action="append", metavar="SITE=TITLE",
+                        help="create mode: title of the client's daily task (default: from the day's commits)")
     if command == "push":
         ap.add_argument("--dry-run", action="store_true", help="show what would be posted, write nothing")
         ap.add_argument("--assign", action="append", metavar="SITE=TASK", help="task for a client, this push only")
         ap.add_argument("--billable", action="store_true", help="mark the entries billable")
         ap.add_argument("--only", action="append", metavar="SITE", help="push only this client's rows (repeatable)")
-        ap.add_argument("--title", action="append", metavar="SITE=TITLE",
-                        help="create mode: title of the client's daily task (default: from the day's commits)")
         ap.add_argument("--prompt", action="append", metavar="SITE=TEXT",
                         help="create mode: value for the task's Initial prompt field (default: the work's first prompt)")
+        ap.add_argument("--desc", action="append", metavar="SITE=MARKDOWN",
+                        help="create mode: description of the client's daily task, what was done (set on today's "
+                        "task even when it exists already)")
         ap.add_argument("--create", action="store_true", help="create one 'in progress' task per client for the day "
                         "and log the time there (same as [clickup] mode = \"create\")")
     args = ap.parse_args(argv)
@@ -269,7 +290,8 @@ def main(argv: list[str] | None = None) -> int:
 
     cfg = config.load(args.config)
     sites = Sites(cfg.sites_file, cfg.sites_example)
-    commands = {"table": cmd_table, "push": cmd_push, "add": cmd_add, "name": cmd_name, "week": cmd_week, "check": cmd_check}
+    commands = {"table": cmd_table, "push": cmd_push, "add": cmd_add, "name": cmd_name, "week": cmd_week, "check": cmd_check,
+                "adopt": cmd_adopt}
     return commands[command](args, cfg, sites)
 
 

@@ -8,6 +8,8 @@
 # task id  - optional default ClickUp task for `/hours push` (the id after /t/ in the task URL).
 # list:ID  - optional list where `push --create` opens the client's daily task (the number in the list URL).
 #            A ClickUp task link pasted into a prompt overrides it for that session.
+# parent:ID - the client's parent task; every daily task is filed as its subtask. The push writes this line
+#            itself after it creates the parent (or point it at a top-level task of your own in the same list).
 # Put specific patterns above generic ones. New project folders are appended here automatically.
 craftberry = Craftberry
 acme = Acme | 86cXXXXXX list:901500000000

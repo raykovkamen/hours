@@ -125,11 +125,13 @@ class ExecuteTest(unittest.TestCase):
 class CreateApi(FakeApi):
     """Fake API with lists: find_task / create_task / user."""
 
-    def __init__(self, existing=None, bad_lists=()):
+    def __init__(self, existing=None, bad_lists=(), tagged=None):
         super().__init__()
         self.existing = existing or {}  # (list_id, name) -> task id
         self.bad_lists = set(bad_lists)
+        self.tagged = tagged or {}  # list_id -> top-level tasks tagged by the tool, oldest first
         self.created = []
+        self.parents = []  # parent id passed to each create_task call
 
     def user(self):
         return {"id": 42}
@@ -137,16 +139,30 @@ class CreateApi(FakeApi):
     def field_id(self, list_id, name):
         return "F1" if name.lower() == "initial prompt" else ""
 
-    def create_task(self, list_id, name, status, assignee_id, custom_fields=None, tag=""):
+    def tagged_tasks(self, list_id, tag):
+        self.searched = getattr(self, "searched", []) + [(list_id, tag)]
+        return list(self.tagged.get(list_id, []))
+
+    def move_under(self, task_id, parent_id):
+        self.moved = getattr(self, "moved", []) + [(task_id, parent_id)]
+
+    def set_description(self, task_id, description):
+        self.described = getattr(self, "described", []) + [(task_id, description)]
+
+    def create_task(self, list_id, name, status, assignee_id, custom_fields=None, tag="", parent="", description=""):
         self.tags = getattr(self, "tags", []) + [tag]
         self.fields = getattr(self, "fields", []) + [custom_fields]
+        self.parents.append(parent)
+        self.descriptions = getattr(self, "descriptions", []) + [description]
         if list_id in self.bad_lists:
             from timesheet.clickup import ClickUpError
             raise ClickUpError("HTTP 404 list not found")
         tid = f"new{len(self.created) + 1}"
         self.created.append((list_id, name, status, assignee_id))
         self.existing[(list_id, name)] = tid
-        return Task(tid, name, status, "DEV", "Client")
+        t = Task(tid, name, status, "DEV", "Client", list_id, parent=parent)
+        self.tasks[tid] = t
+        return t
 
 
 class CreateModeTest(unittest.TestCase):
@@ -215,7 +231,7 @@ class CreateModeTest(unittest.TestCase):
         ev = {"Acme": [(at(9, 10), "prompt", "secret client text"), (at(9, 20), "commit", "Merge branch main"),
                        (at(9, 30), "commit", "Fix VAT field in checkout"), (at(10, 0), "commit", "Add tests")]}
         p = self.plan([row(9, 0, 10, 0, "Acme")], name="{title}", evidence=lambda s: ev.get(s, []))
-        self.assertEqual(p.actions[0].task_name, "Fix VAT field in checkout (+1 more)")
+        self.assertEqual(p.actions[0].task_name, "Fix VAT field in checkout")
         p = self.plan([row(9, 0, 10, 0, "Acme")], name="{title}", titles={"Acme": "Checkout VAT fixes"},
                       evidence=lambda s: ev.get(s, []))
         self.assertEqual(p.actions[0].task_name, "Checkout VAT fixes")
@@ -270,6 +286,25 @@ class CreateModeTest(unittest.TestCase):
         push.execute(p, api, billable=False, dry_run=False, log_dir=self.logs, prompt_field="Initial prompt")
         self.assertFalse(hasattr(api, "fields"))
 
+    def test_description_is_set_on_a_new_task_and_updated_on_todays_existing_one(self):
+        api = CreateApi()
+        p = push.plan(DAY, [row(9, 0, 10, 0, "Acme")], self.sites, [], {}, "create", "", "{title}",
+                      {"Acme": "Checkout VAT"}, None, None, {"Acme": "- fixed the VAT field\n- added tests\n"})
+        push.execute(p, api, billable=False, dry_run=False, log_dir=self.logs)
+        self.assertEqual(api.descriptions, ["- fixed the VAT field\n- added tests"])
+        self.assertFalse(hasattr(api, "described"))
+        self.assertIn("Description: - fixed the VAT field - added tests", push.render(p, dry_run=False))
+        api = CreateApi()
+        p = push.plan(DAY, [row(9, 0, 10, 0, "Acme")], self.sites, [], {}, "create", "", "{title}",
+                      None, None, None, {"Acme": "- fixed the VAT field, tested live"})
+        push.execute(p, api, billable=False, dry_run=True, log_dir=self.logs)
+        self.assertFalse(hasattr(api, "described"))
+        self.assertIn("Would set the description of 1 existing task(s)", push.render(p, dry_run=True))
+        push.execute(p, api, billable=False, dry_run=False, log_dir=self.logs)
+        self.assertEqual(api.described, [("new1", "- fixed the VAT field, tested live")])
+        self.assertEqual(api.created, [])
+        self.assertIn("Set the description of 1 existing task(s)", push.render(p, dry_run=False))
+
     def test_bad_list_blocks_before_anything_is_written(self):
         api = CreateApi(bad_lists={"L1"})
         p = self.plan([row(9, 0, 10, 0, "Acme")])
@@ -277,6 +312,151 @@ class CreateModeTest(unittest.TestCase):
         self.assertFalse(p.ok)
         self.assertEqual((api.created, api.posted), ([], []))
 
+
+
+class ParentTaskTest(unittest.TestCase):
+    """Create mode files every daily task as a subtask of one parent task per client."""
+
+    def setUp(self):
+        self.dir = tempfile.TemporaryDirectory()
+        self.path = Path(self.dir.name) / "sites.txt"
+        self.path.write_text("acme = Acme | list:L1   # client\nacme.com = Acme\n", encoding="utf-8")
+        self.sites = Sites(self.path)
+        self.logs = Path(self.dir.name) / "logs"
+
+    def tearDown(self):
+        self.dir.cleanup()
+
+    def run_push(self, api, rows=None, dry_run=False, parent_name="{site} – hours", tag="created by hours"):
+        p = push.plan(DAY, rows or [row(9, 0, 10, 0, "Acme")], self.sites, [], {}, "create", "", "{title}",
+                      {"Acme": "Fix checkout"})
+        push.execute(p, api, billable=False, dry_run=dry_run, log_dir=self.logs, tag=tag, sites=self.sites,
+                     parent_name=parent_name)
+        return p
+
+    def test_first_push_creates_the_parent_then_the_daily_task_under_it(self):
+        api = CreateApi()
+        p = self.run_push(api)
+        self.assertEqual([c[1] for c in api.created], ["Acme – hours", "Fix checkout"])
+        self.assertEqual(api.parents, ["", "new1"])
+        self.assertEqual(api.tags, ["created by hours", "created by hours"])
+        self.assertEqual(api.posted[0][0], "new2")
+        self.assertEqual(self.sites.parents, {"Acme": "new1"})
+        self.assertIn("acme = Acme | list:L1 parent:new1  # client", self.path.read_text(encoding="utf-8"))
+        out = push.render(p, dry_run=False)
+        self.assertIn('parent task "Acme – hours" [new1] created', out)
+
+    def test_later_days_nest_under_the_parent_from_sites_txt(self):
+        self.path.write_text("acme = Acme | list:L1 parent:P1\n", encoding="utf-8")
+        self.sites = Sites(self.path)
+        api = CreateApi()
+        api.tasks["P1"] = Task("P1", "Acme – hours", "in progress", "DEV", "Client", "L1")
+        p = self.run_push(api)
+        self.assertEqual([c[1] for c in api.created], ["Fix checkout"])
+        self.assertEqual(api.parents, ["P1"])
+        self.assertNotIn("P1", self.path.read_text(encoding="utf-8").replace("parent:P1", "", 1))  # unchanged
+        self.assertIn('subtask of "Acme – hours" [P1]', push.render(p, dry_run=False))
+
+    def test_lost_sites_line_finds_the_parent_by_name_and_tag_and_writes_it_back(self):
+        old = Task("P9", "Acme – hours", "closed", "DEV", "Client", "L1")
+        other = Task("X1", "Fix checkout", "open", "DEV", "Client", "L1")  # an old flat daily task, same tag
+        api = CreateApi(tagged={"L1": [other, old]})
+        self.run_push(api)
+        self.assertEqual(api.searched, [("L1", "created by hours")])
+        self.assertEqual(api.parents, ["P9"])
+        self.assertIn("parent:P9", self.path.read_text(encoding="utf-8"))
+
+    def test_deleted_or_moved_parent_is_replaced(self):
+        self.path.write_text("acme = Acme | list:L1 parent:GONE\n", encoding="utf-8")
+        self.sites = Sites(self.path)
+        api = CreateApi()
+        api.fail = {"GONE"}
+        self.run_push(api)
+        self.assertEqual([c[1] for c in api.created], ["Acme – hours", "Fix checkout"])
+        text = self.path.read_text(encoding="utf-8")
+        self.assertIn("parent:new1", text)
+        self.assertNotIn("GONE", text)
+        api = CreateApi()
+        api.tasks["new1"] = Task("new1", "Acme – hours", "open", "DEV", "Client", "L2")  # in another list now
+        self.sites, self.logs = Sites(self.path), Path(self.dir.name) / "logs2"  # another day: no log of today's task
+        self.run_push(api)
+        self.assertEqual([c[1] for c in api.created], ["Acme – hours", "Fix checkout"])
+        self.assertEqual(api.parents, ["", "new1"])
+
+    def test_dry_run_creates_nothing_and_writes_nothing(self):
+        api = CreateApi()
+        p = self.run_push(api, dry_run=True)
+        self.assertEqual(api.created, [])
+        self.assertNotIn("parent:", self.path.read_text(encoding="utf-8"))
+        out = push.render(p, dry_run=True)
+        self.assertIn('new subtask of "Acme – hours" in list L1', out)
+        self.assertIn('parent task "Acme – hours" would be created first', out)
+
+    def test_parent_is_created_once_per_push_and_todays_task_needs_none(self):
+        api = CreateApi()
+        self.run_push(api)
+        api.created.clear()
+        api.parents.clear()
+        self.run_push(api)  # same day again: today's task is found in the log
+        self.assertEqual((api.created, api.parents), ([], []))
+
+    def test_empty_parent_name_keeps_daily_tasks_flat(self):
+        api = CreateApi()
+        self.run_push(api, parent_name="")
+        self.assertEqual([c[1] for c in api.created], ["Fix checkout"])
+        self.assertEqual(api.parents, [""])
+        self.assertNotIn("parent:", self.path.read_text(encoding="utf-8"))
+
+    def test_without_a_tag_the_parent_is_only_known_from_sites_txt(self):
+        api = CreateApi(tagged={"L1": [Task("P9", "Acme – hours", "open", "DEV", "Client", "L1")]})
+        self.run_push(api, tag="")
+        self.assertFalse(hasattr(api, "searched"))
+        self.assertEqual([c[1] for c in api.created], ["Acme – hours", "Fix checkout"])
+
+
+class AdoptTest(unittest.TestCase):
+    """`adopt` files the flat daily tasks of earlier days under each client's parent task."""
+
+    def setUp(self):
+        self.dir = tempfile.TemporaryDirectory()
+        self.path = Path(self.dir.name) / "sites.txt"
+        self.path.write_text("acme = Acme | list:L1\nzeta = Zeta | list:L2 parent:P2\nnolist = Nolist\n", encoding="utf-8")
+        self.sites = Sites(self.path)
+
+    def tearDown(self):
+        self.dir.cleanup()
+
+    def test_creates_missing_parents_moves_old_tasks_and_leaves_the_rest(self):
+        old1 = Task("A1", "Fix checkout", "closed", "DEV", "Acme", "L1")
+        old2 = Task("A2", "Add tests", "open", "DEV", "Acme", "L1")
+        z1 = Task("Z1", "Zeta work", "open", "DEV", "Zeta", "L2")
+        api = CreateApi(tagged={"L1": [old1, old2], "L2": [z1, Task("P2", "Zeta – hours", "open", "DEV", "Zeta", "L2")]})
+        api.tasks["P2"] = Task("P2", "Zeta – hours", "open", "DEV", "Zeta", "L2")
+        lines = push.adopt(self.sites, api, dry_run=False, tag="created by hours")
+        self.assertEqual([c[1] for c in api.created], ["Acme – hours"])
+        self.assertEqual(api.moved, [("A1", "new1"), ("A2", "new1"), ("Z1", "P2")])
+        self.assertIn("parent:new1", self.path.read_text(encoding="utf-8"))
+        self.assertTrue(lines[0].startswith("Acme: moved 2 task(s) under \"Acme – hours\" [new1]"))
+        self.assertTrue(lines[1].startswith("Zeta: moved 1 task(s) under \"Zeta – hours\" [P2]"))
+        self.assertEqual(len(lines), 2)  # Nolist has no list
+
+    def test_dry_run_and_only_change_nothing(self):
+        api = CreateApi(tagged={"L1": [Task("A1", "Fix checkout", "open", "DEV", "Acme", "L1")]})
+        lines = push.adopt(self.sites, api, dry_run=True, tag="created by hours", only={"acme"})
+        self.assertEqual(api.created, [])
+        self.assertFalse(hasattr(api, "moved"))
+        self.assertNotIn("parent:", self.path.read_text(encoding="utf-8").split("\n")[0])
+        self.assertEqual(len(lines), 1)
+        self.assertIn('would move 1 task(s) under "Acme – hours" (would be created in list L1)', lines[0])
+
+    def test_nothing_to_move_creates_no_parent(self):
+        api = CreateApi()
+        lines = push.adopt(self.sites, api, dry_run=False, tag="created by hours", only={"acme"})
+        self.assertEqual((api.created, lines), ([], ["Acme: nothing to move"]))
+
+    def test_needs_tag_and_parent_name(self):
+        self.assertIn("adopt needs", push.adopt(self.sites, CreateApi(), False, tag="")[0])
+        self.assertIn("adopt needs", push.adopt(self.sites, CreateApi(), False, tag="x", parent_name="")[0])
 
 
 class TagTest(unittest.TestCase):

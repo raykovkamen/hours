@@ -54,6 +54,34 @@ class ClickUpClientTest(unittest.TestCase):
         _, _, _, body = api.calls[-1]
         self.assertEqual(body, {"tid": "T1", "start": to_ms(start), "duration": 45 * 60000, "description": "hours: Acme", "billable": False})
 
+    def test_tagged_tasks_are_top_level_only_oldest_first_and_filtered_by_tag(self):
+        api = self.client({"list/L1/task": {"tasks": [
+            {"id": "B", "name": "Newer", "date_created": "1761600000000", "list": {"id": "L1"}},
+            {"id": "S", "name": "Sub", "date_created": "1761500000000", "list": {"id": "L1"}, "parent": "A"},
+            {"id": "A", "name": "Acme – hours", "date_created": "1761550000000", "list": {"id": "L1"}, "parent": None},
+        ]}})
+        tasks = api.tagged_tasks("L1", "created by hours")
+        self.assertEqual([t.id for t in tasks], ["A", "B"])
+        self.assertEqual(tasks[0].parent, "")
+        _, _, params, _ = api.calls[-1]
+        self.assertEqual(params["tags[]"], "created by hours")
+        self.assertEqual(params["include_closed"], "true")
+
+    def test_create_task_sends_the_parent(self):
+        api = self.client({"list/L1/task": {"id": "N1"},
+                           "task/N1": {"id": "N1", "name": "Daily", "list": {"id": "L1"}, "parent": "P1"}})
+        t = api.create_task("L1", "Daily", "in progress", 42, None, "", "P1", "- did things")
+        self.assertEqual(t.parent, "P1")
+        _, _, _, body = api.calls[0]
+        self.assertEqual(body["parent"], "P1")
+        self.assertEqual(body["status"], "in progress")
+        self.assertEqual(body["markdown_description"], "- did things")
+
+    def test_set_description_updates_the_task(self):
+        api = self.client({"task/N1": {"id": "N1"}})
+        api.set_description("N1", "- summary")
+        self.assertEqual(api.calls[-1], ("PUT", "task/N1", None, {"markdown_content": "- summary"}))
+
     def test_http_errors_become_clickup_errors_without_the_token(self):
         import io
         import urllib.error

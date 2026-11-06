@@ -46,6 +46,26 @@ class SitesTest(unittest.TestCase):
         self.assertEqual(Sites(self.path).auto_add("brava-migration"), "Brava")
         self.assertEqual(self.path.read_text(encoding="utf-8").count("brava-migration ="), 1)
 
+    def test_parent_is_parsed_and_set_parent_rewrites_the_list_line(self):
+        with open(self.path, "w", encoding="utf-8", newline="") as f:  # mixed line endings, kept as they are
+            f.write("acme-b2b = Acme B2B | 86c111\n"
+                    "acme.com = Acme\n"
+                    "acme = Acme | 86c222 list:L1 parent:OLD   # default task\r\n"
+                    "zeta = Zeta\n")
+        sites = Sites(self.path)
+        self.assertEqual(sites.parents, {"Acme": "OLD"})
+        self.assertEqual(sites.lists, {"Acme": "L1"})
+        self.assertTrue(sites.set_parent("Acme", "NEW"))
+        self.assertTrue(sites.set_parent("Zeta", "Z1"))
+        self.assertEqual(sites.parents, {"Acme": "NEW", "Zeta": "Z1"})
+        with open(self.path, encoding="utf-8", newline="") as f:
+            text = f.read()
+        self.assertIn("acme = Acme | 86c222 list:L1 parent:NEW  # default task\r\n", text)
+        self.assertIn("zeta = Zeta | parent:Z1\n", text)
+        self.assertNotIn("OLD", text)
+        self.assertEqual(Sites(self.path).parents, {"Acme": "NEW", "Zeta": "Z1"})
+        self.assertFalse(sites.set_parent("Nobody", "N1"))
+
     def test_falls_back_to_example_without_writing(self):
         example = Path(self.dir.name) / "sites.example.txt"
         example.write_text("demo = Demo\n", encoding="utf-8")
@@ -54,7 +74,9 @@ class SitesTest(unittest.TestCase):
         self.assertTrue(sites.using_example)
         self.assertEqual(sites.match("demo-shop"), "Demo")
         sites.auto_add("new-client")
+        self.assertFalse(sites.set_parent("Demo", "D1"))
         self.assertFalse(missing.exists())
+        self.assertEqual(example.read_text(encoding="utf-8"), "demo = Demo\n")
 
 
 class TaskTest(unittest.TestCase):

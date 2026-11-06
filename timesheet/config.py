@@ -53,6 +53,7 @@ class ClickUpConfig:
     task_tag: str = "created by hours"  # create mode: tag on every task the push creates ("" = none)
     prompt_field: str = "Initial prompt"  # create mode: custom field filled with the work's first prompt ("" = off)
     task_name: str = "{title}"  # create mode: {title} (from --title or commits), also {site} and {date}
+    parent_name: str = "{site} – hours"  # create mode: the client's parent task; daily tasks are its subtasks ("" = flat)
 
 
 @dataclass(frozen=True)
@@ -105,7 +106,8 @@ def load(path: Path | None = None) -> Config:
                             list_id=str(c.get("list_id", "")), task_status=str(c.get("task_status", "in progress")),
                             task_name=str(c.get("task_name", ClickUpConfig.task_name)),
                             prompt_field=str(c.get("prompt_field", ClickUpConfig.prompt_field)),
-                            task_tag=str(c.get("task_tag", ClickUpConfig.task_tag)))
+                            task_tag=str(c.get("task_tag", ClickUpConfig.task_tag)),
+                            parent_name=str(c.get("parent_name", ClickUpConfig.parent_name)))
     if clickup.mode not in ("existing", "create"):
         sys.exit(f'config: [clickup] mode must be "existing" or "create" (got {clickup.mode!r})')
     if workday.step_minutes <= 0 or 60 % workday.step_minutes:
